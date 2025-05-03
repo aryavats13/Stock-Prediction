@@ -3,11 +3,8 @@ from stock_page import stock_page  # Import the function
 from home_page import home_page
 
 # Initialize session state
-if 'page' not in st.session_state:
-    st.session_state.page = 'home'
-
-if 'stock' not in st.session_state:
-    st.session_state.stock = None
+st.session_state.setdefault('page', 'home')
+st.session_state.setdefault('stock', None)
 
 # Add custom CSS
 with open('style.css') as f:

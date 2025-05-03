@@ -3,6 +3,32 @@ import streamlit as st
 def home_page():
     st.markdown('<div class="header-container">', unsafe_allow_html=True)
     st.markdown('<h1 class="main-title">Stock Market Analysis Platform</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Your intelligent companion for stock market analysis and predictions</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Welcome section with project information
+    st.markdown('<div class="welcome-section">', unsafe_allow_html=True)
+    st.markdown('<h2>Welcome to Your Stock Analysis Tool</h2>', unsafe_allow_html=True)
+    st.markdown('<p class="welcome-text">This platform uses advanced algorithms and machine learning to analyze stock market data and provide valuable insights for your investment decisions. Our AI-powered prediction model helps you understand market trends and make informed choices.</p>', unsafe_allow_html=True)
+    
+    # Key features in the welcome section
+    st.markdown('<div class="welcome-features">', unsafe_allow_html=True)
+    st.markdown('<h3>Key Features:</h3>', unsafe_allow_html=True)
+    st.markdown('<ul class="feature-list-welcome">', unsafe_allow_html=True)
+    st.markdown('<li><span class="feature-highlight">Real-time Analysis:</span> Get up-to-date information on stock performance</li>', unsafe_allow_html=True)
+    st.markdown('<li><span class="feature-highlight">Technical Indicators:</span> Access RSI, MACD, and other key indicators</li>', unsafe_allow_html=True)
+    st.markdown('<li><span class="feature-highlight">AI Predictions:</span> View 25-day forecasts based on machine learning models</li>', unsafe_allow_html=True)
+    st.markdown('<li><span class="feature-highlight">Multiple Markets:</span> Analyze US stocks, Indian stocks, and cryptocurrencies</li>', unsafe_allow_html=True)
+    st.markdown('</ul>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Start analyzing button
+    st.markdown('<div class="start-button-container">', unsafe_allow_html=True)
+    if st.button("Start Analyzing Now", key="start_analyzing_button", help="Click to begin your stock analysis journey"):
+        st.session_state.page = 'analysis'
+        st.session_state.stock = "AAPL"  # Default to Apple as a starting point
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     
     # Market Selection Tabs
@@ -26,7 +52,7 @@ def home_page():
             if st.button("Analyze US Stock", key="us_analyze_button"):
                 st.session_state.stock = selected_us_stock
                 st.session_state.page = 'analysis'
-                st.experimental_rerun()
+                st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
         with col2:
@@ -44,7 +70,7 @@ def home_page():
             if st.button("Analyze Indian Stock", key="indian_analyze_button"):
                 st.session_state.stock = selected_indian_stock
                 st.session_state.page = 'analysis'
-                st.experimental_rerun()
+                st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -65,7 +91,7 @@ def home_page():
             if st.button("Analyze Cryptocurrency", key="crypto_analyze_button"):
                 st.session_state.stock = selected_crypto
                 st.session_state.page = 'analysis'
-                st.experimental_rerun()
+                st.rerun()
         
         with col2:
             st.markdown('''

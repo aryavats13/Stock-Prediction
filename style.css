@@ -1,30 +1,37 @@
 /* Global styles */
 :root {
-    --primary-color: #BB86FC;
-    --secondary-color: #03DAC6;
-    --background-dark: #1a1a1a;
-    --text-light: #ffffff;
-    --text-gray: #b0b0b0;
-    --card-bg: rgba(255, 255, 255, 0.05);
-    --card-border: rgba(255, 255, 255, 0.1);
-    --hover-color: rgba(187, 134, 252, 0.1);
+    --primary-color: #3f51b5; /* Vibrant blue */
+    --secondary-color: #ff6e40; /* Accent orange */
+    --background-color: #ffffff; /* White background */
+    --text-color: #333333; /* Dark gray for better contrast */
+    --text-secondary: #666666; /* Medium gray for secondary text */
+    --border-color: #e0e0e0; /* Light gray for borders */
+    --hover-color: #f5f5f5; /* Very light gray for hover effects */
+    --shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+    --card-bg: #ffffff; /* White card background */
+    --accent-light: #e8eaf6; /* Light accent color for backgrounds */
 }
 
 /* Global font settings */
-.stApp {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Roboto:wght@400;500;700&display=swap');
+
+body, .stApp {
+    font-family: 'Open Sans', sans-serif;
     font-size: 16px;
     line-height: 1.6;
-    color: var(--text-light);
+    color: var(--text-color);
+    background-color: var(--background-color);
 }
 
 /* Container styles */
 .header-container {
-    background: linear-gradient(135deg, rgba(187, 134, 252, 0.1), rgba(3, 218, 198, 0.1));
+    background: var(--card-bg);
     padding: 2rem;
-    border-radius: 15px;
+    border-radius: 8px;
     margin-bottom: 2rem;
     text-align: center;
+    box-shadow: var(--shadow);
+    border-bottom: 3px solid var(--primary-color);
 }
 
 .content-container {
@@ -33,21 +40,74 @@
     padding: 0 1rem;
 }
 
-/* Title styles */
+/* Typography */
 .main-title {
-    font-size: 2.5rem;
+    font-size: 2.2rem;
     font-weight: 700;
     color: var(--primary-color);
     margin: 0;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    font-family: 'Roboto', sans-serif;
+}
+
+.subtitle {
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
+    font-family: 'Open Sans', sans-serif;
+}
+
+
+/* Global font settings */
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Roboto:wght@400;500;700&display=swap');
+
+body, .stApp {
+    font-family: 'Open Sans', sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--text-color);
+    background-color: var(--background-color);
+}
+
+/* Container styles */
+.header-container {
+    background: var(--card-bg);
+    padding: 2rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    text-align: center;
+    box-shadow: var(--shadow);
+    border-bottom: 3px solid var(--primary-color);
+}
+
+.content-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+
+/* Typography */
+.main-title {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    margin: 0;
+    font-family: 'Roboto', sans-serif;
+}
+
+.subtitle {
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
+    font-family: 'Open Sans', sans-serif;
 }
 
 h1 {
-    font-size: 2.5rem;
+    font-size: 2.2rem;
     font-weight: 700;
-    color: var(--text-light);
+    color: var(--primary-color);
     margin-bottom: 1.5rem;
     letter-spacing: -0.5px;
+    font-family: 'Roboto', sans-serif;
 }
 
 h2 {
@@ -55,6 +115,7 @@ h2 {
     color: var(--primary-color);
     margin-bottom: 1.5rem;
     font-weight: 600;
+    font-family: 'Roboto', sans-serif;
 }
 
 h3 {
@@ -62,12 +123,13 @@ h3 {
     color: var(--secondary-color);
     margin-bottom: 1rem;
     font-weight: 500;
+    font-family: 'Roboto', sans-serif;
 }
 
 p {
-    font-size: 1.1rem;
+    font-size: 1rem;
     line-height: 1.6;
-    color: var(--text-light);
+    color: var(--text-color);
     margin-bottom: 1rem;
 }
 
@@ -75,77 +137,83 @@ p {
 .stTabs {
     background: var(--card-bg);
     padding: 1rem;
-    border-radius: 10px;
+    border-radius: 8px;
     margin-bottom: 2rem;
+    box-shadow: var(--shadow);
 }
 
 .stTabs [data-baseweb="tab-list"] {
     background: transparent;
-    border-bottom: 1px solid var(--card-border);
+    border-bottom: 1px solid var(--border-color);
     gap: 2rem;
+    font-family: 'Roboto', sans-serif;
 }
 
 .stTabs [data-baseweb="tab"] {
-    font-size: 1.1rem;
-    color: var(--text-light);
-    padding: 1rem 2rem;
+    font-size: 1rem;
+    color: var(--text-color);
+    padding: 0.75rem 1.5rem;
     border: none;
     background: transparent;
+    transition: all 0.3s ease;
 }
 
 .stTabs [data-baseweb="tab"][aria-selected="true"] {
     color: var(--primary-color);
     border-bottom: 2px solid var(--primary-color);
+    font-weight: 600;
 }
 
 /* Market cards */
 .market-container {
     display: flex;
-    gap: 2rem;
+    gap: 1.5rem;
     margin-bottom: 2rem;
 }
 
 .market-card {
     background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     padding: 1.5rem;
     height: 100%;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
 }
 
 .market-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-    border-color: var(--primary-color);
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
 }
 
 /* Feature cards */
 .features-section {
     padding: 2rem 0;
     margin: 2rem 0;
-    border-top: 1px solid var(--card-border);
-    border-bottom: 1px solid var(--card-border);
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
 }
 
 .feature-card {
     background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     padding: 1.5rem;
     text-align: center;
     height: 100%;
-    transition: transform 0.3s ease;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
 }
 
 .feature-card:hover {
-    transform: translateY(-5px);
-    border-color: var(--primary-color);
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
 }
 
 .feature-icon {
-    font-size: 2.5rem;
+    font-size: 2rem;
     margin-bottom: 1rem;
+    color: var(--primary-color);
 }
 
 /* Insight cards */
@@ -155,16 +223,17 @@ p {
 
 .insight-card {
     background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     padding: 1.5rem;
     margin-bottom: 1rem;
-    transition: transform 0.3s ease;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
 }
 
 .insight-card:hover {
     transform: translateY(-2px);
-    border-color: var(--primary-color);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
 }
 
 .insight-title {
@@ -175,13 +244,13 @@ p {
 }
 
 .insight-content {
-    color: var(--text-light);
+    color: var(--text-color);
     font-size: 1rem;
     line-height: 1.5;
 }
 
 .insight-meta {
-    color: var(--text-gray);
+    color: var(--text-secondary);
     font-size: 0.9rem;
     margin-top: 1rem;
 }
@@ -197,29 +266,31 @@ p {
 
 /* Button styling */
 .stButton > button {
-    background: var(--primary-color);
-    color: black;
+    background-color: var(--primary-color);
+    font-family: 'Roboto', sans-serif;
+    font-weight: 500;
+    color: white;
     border: none;
     padding: 0.75rem 1.5rem;
-    border-radius: 5px;
-    font-weight: 500;
+    border-radius: 4px;
     transition: all 0.3s ease;
     width: 100%;
     margin-top: 1rem;
+    box-shadow: var(--shadow);
 }
 
 .stButton > button:hover {
-    background: rgba(187, 134, 252, 0.8);
+    background-color: #303f9f; /* Slightly darker primary color */
     transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 /* Select box styling */
 .stSelectbox > div > div {
     background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 5px;
-    color: var(--text-light);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
 }
 
 .stSelectbox > div > div:hover {
@@ -228,12 +299,12 @@ p {
 
 /* Disclaimer */
 .disclaimer {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
+    background: var(--hover-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     padding: 1rem;
     margin-top: 2rem;
-    color: var(--text-gray);
+    color: var(--text-secondary);
     font-size: 0.9rem;
     text-align: center;
 }
@@ -241,17 +312,18 @@ p {
 /* Metrics and charts */
 [data-testid="stMetricValue"] {
     background: var(--card-bg);
-    border: 1px solid var(--card-border);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 1rem;
     color: var(--primary-color);
     font-weight: 600;
+    box-shadow: var(--shadow);
 }
 
 [data-testid="stMetricDelta"] {
-    background: rgba(3, 218, 198, 0.1);
-    border: 1px solid rgba(3, 218, 198, 0.2);
-    border-radius: 5px;
+    background: rgba(63, 81, 181, 0.05);
+    border: 1px solid rgba(63, 81, 181, 0.1);
+    border-radius: 4px;
     padding: 0.5rem;
     margin-top: 0.5rem;
 }
@@ -259,10 +331,11 @@ p {
 /* Chart container */
 [data-testid="stPlotlyChart"] {
     background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     padding: 1rem;
     margin: 1rem 0;
+    box-shadow: var(--shadow);
 }
 
 /* Responsive design */
@@ -276,7 +349,7 @@ p {
     }
     
     .main-title {
-        font-size: 2rem;
+        font-size: 1.8rem;
     }
     
     h2 {
@@ -284,41 +357,19 @@ p {
     }
     
     .stTabs [data-baseweb="tab"] {
-        padding: 0.75rem 1rem;
-        font-size: 1rem;
+        padding: 0.5rem 1rem;
+        font-size: 0.9rem;
     }
-}
-
-/* Dark theme */
-body {
-    color: var(--text-light);
-    background-color: var(--background-dark);
-    font-family: 'Roboto', sans-serif;
-}
-
-.stApp {
-    background-color: var(--background-dark);
-}
-
-/* Typography */
-h1, h2, h3, h4, h5, h6 {
-    color: var(--primary-color);
-}
-
-.stock-title {
-    font-size: 2.5rem;
-    color: var(--secondary-color);
-    text-align: center;
-    margin-bottom: 1.5rem;
 }
 
 /* Layout */
 .intro-box {
     background-color: var(--card-bg);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 20px;
     margin-bottom: 30px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
 }
 
 .spacer {
@@ -328,50 +379,59 @@ h1, h2, h3, h4, h5, h6 {
 .footer {
     text-align: center;
     margin-top: 50px;
-    color: var(--text-gray);
+    color: var(--text-secondary);
+    padding: 20px 0;
+    border-top: 1px solid var(--border-color);
 }
 
 /* DataFrames */
 .dataframe {
     background-color: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     overflow: hidden;
+    box-shadow: var(--shadow);
 }
 
 .dataframe th {
-    background-color: var(--card-bg);
+    background-color: #f5f7ff; /* Light primary color background */
     color: var(--primary-color);
     padding: 12px;
+    font-weight: 600;
 }
 
 .dataframe td {
     padding: 10px;
-    border-bottom: 1px solid var(--card-border);
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-color);
 }
 
 /* Prediction Box */
 .prediction-box {
-    background-color: var(--primary-color);
-    color: var(--text-light);
+    background-color: #f5f7ff; /* Light primary color background */
+    color: var(--primary-color);
     padding: 15px;
-    border-radius: 5px;
+    border-radius: 8px;
     font-weight: bold;
     text-align: center;
     margin-top: 20px;
+    border-left: 4px solid var(--primary-color);
+    box-shadow: var(--shadow);
 }
 
 /* Plots */
 .stPlot {
-    background-color: var(--background-dark);
-    border-radius: 10px;
+    background-color: var(--card-bg);
+    border-radius: 8px;
     padding: 10px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
 }
 
 /* Sidebar */
 .css-1d391kg {
-    background-color: var(--background-dark);
+    background-color: var(--background-color);
+    border-right: 1px solid var(--border-color);
 }
 
 .css-1d391kg .stButton > button {
@@ -381,17 +441,17 @@ h1, h2, h3, h4, h5, h6 {
 /* Market sections */
 .market-section {
     background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     padding: 20px;
     margin: 10px 0;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    box-shadow: var(--shadow);
     transition: all 0.3s ease;
 }
 
 .market-section:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
 }
 
 .market-title {
@@ -399,20 +459,23 @@ h1, h2, h3, h4, h5, h6 {
     margin-bottom: 15px;
     font-size: 1.5em;
     text-align: center;
+    font-weight: 600;
 }
 
 /* Crypto info styling */
 .crypto-info {
     background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     padding: 20px;
     margin-top: 20px;
+    box-shadow: var(--shadow);
 }
 
 .crypto-info h3 {
     color: var(--secondary-color);
     margin-bottom: 15px;
+    font-weight: 600;
 }
 
 .crypto-info ul {
@@ -424,14 +487,15 @@ h1, h2, h3, h4, h5, h6 {
     background: var(--card-bg);
     margin: 8px 0;
     padding: 10px 15px;
-    border-radius: 5px;
-    border: 1px solid var(--card-border);
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
     transition: all 0.3s ease;
+    color: var(--text-color);
 }
 
 .crypto-info li:hover {
     background: var(--hover-color);
-    transform: translateX(5px);
+    transform: translateX(3px);
 }
 
 /* Quick stats section */
@@ -444,46 +508,50 @@ h1, h2, h3, h4, h5, h6 {
 
 .stat-card {
     background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     padding: 15px;
     text-align: center;
     transition: all 0.3s ease;
+    box-shadow: var(--shadow);
 }
 
 .stat-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
 }
 
 .stat-card h3 {
     color: var(--primary-color);
     margin-bottom: 10px;
     font-size: 1.2em;
+    font-weight: 600;
 }
 
 .stat-card p {
-    color: var(--text-light);
+    color: var(--text-color);
     font-size: 0.9em;
 }
 
 /* List styling */
 ul {
-    font-size: 1.1rem;
+    font-size: 1rem;
     line-height: 1.6;
+    color: var(--text-color);
 }
 
 li {
     margin-bottom: 0.5rem;
-    color: var(--text-light);
+    color: var(--text-color);
 }
 
 /* Feature list */
 .feature-list {
     background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     padding: 1.5rem;
+    box-shadow: var(--shadow);
 }
 
 .feature-list ul {
@@ -494,9 +562,14 @@ li {
 
 .feature-list li {
     padding: 0.5rem 0;
-    color: var(--text-gray);
+    color: var(--text-color);
     display: flex;
     align-items: center;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.feature-list li:last-child {
+    border-bottom: none;
 }
 
 .feature-list li:before {
@@ -508,22 +581,624 @@ li {
 /* Chart labels and text */
 .js-plotly-plot text {
     font-size: 14px;
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-family: 'Open Sans', system-ui, -apple-system, sans-serif;
+    color: var(--text-color);
 }
 
 .js-plotly-plot .gtitle {
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 600;
+    color: var(--primary-color);
 }
 
 /* Make chart axis labels more readable */
 .js-plotly-plot .xtitle, .js-plotly-plot .ytitle {
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 500;
+    color: var(--text-secondary);
 }
 
 /* Make chart legend more readable */
 .js-plotly-plot .legend text {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-color);
+}
+
+/* Stock title */
+.stock-title {
+    font-size: 2.2rem;
+    color: var(--primary-color);
+    text-align: center;
+    margin-bottom: 1.5rem;
+    font-weight: 700;
+    font-family: 'Roboto', sans-serif;
+}
+/* Welcome Section Styles */
+.welcome-section {
+    background: var(--accent-light);
+    border-radius: 10px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow);
+    border-left: 4px solid var(--primary-color);
+}
+
+.welcome-text {
+    font-size: 1.1rem;
+    line-height: 1.6;
+    color: var(--text-color);
+    margin-bottom: 1.5rem;
+}
+
+.welcome-features {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--border-color);
+}
+
+.feature-list-welcome {
+    list-style-type: none;
+    padding-left: 0.5rem;
+}
+
+.feature-list-welcome li {
+    margin-bottom: 0.8rem;
+    padding-left: 1.5rem;
+    position: relative;
+    color: var(--text-color);
+}
+
+.feature-list-welcome li:before {
+    content: '✓';
+    color: var(--primary-color);
+    position: absolute;
+    left: 0;
+    font-weight: bold;
+}
+
+.feature-highlight {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+/* Start Button Styles */
+.start-button-container {
+    text-align: center;
+    margin: 2rem 0;
+}
+
+.start-button-container button {
+    background-color: var(--primary-color);
+    color: white;
+    font-size: 1.2rem;
+    font-weight: 600;
+    padding: 0.8rem 2rem;
+    border-radius: 30px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.start-button-container button:hover {
+    background-color: #303f9f;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+}
+
+h1 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    margin-bottom: 1.5rem;
+    letter-spacing: -0.5px;
+    font-family: 'Roboto', sans-serif;
+}
+
+h2 {
+    font-size: 1.8rem;
+    color: var(--primary-color);
+    margin-bottom: 1.5rem;
+    font-weight: 600;
+    font-family: 'Roboto', sans-serif;
+}
+
+h3 {
+    font-size: 1.2rem;
+    color: var(--secondary-color);
+    margin-bottom: 1rem;
+    font-weight: 500;
+    font-family: 'Roboto', sans-serif;
+}
+
+p {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--text-color);
+    margin-bottom: 1rem;
+}
+
+/* Tab styling */
+.stTabs {
+    background: var(--card-bg);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow);
+}
+
+.stTabs [data-baseweb="tab-list"] {
+    background: transparent;
+    border-bottom: 1px solid var(--border-color);
+    gap: 2rem;
+    font-family: 'Roboto', sans-serif;
+}
+
+.stTabs [data-baseweb="tab"] {
+    font-size: 1rem;
+    color: var(--text-color);
+    padding: 0.75rem 1.5rem;
+    border: none;
+    background: transparent;
+    transition: all 0.3s ease;
+}
+
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    color: var(--primary-color);
+    border-bottom: 2px solid var(--primary-color);
+    font-weight: 600;
+}
+
+/* Market cards */
+.market-container {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.market-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    height: 100%;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
+}
+
+.market-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Feature cards */
+.features-section {
+    padding: 2rem 0;
+    margin: 2rem 0;
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.feature-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    text-align: center;
+    height: 100%;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
+}
+
+.feature-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.feature-icon {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    color: var(--primary-color);
+}
+
+/* Insight cards */
+.insights-section {
+    margin: 2rem 0;
+}
+
+.insight-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
+}
+
+.insight-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.insight-title {
+    color: var(--primary-color);
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.insight-content {
+    color: var(--text-color);
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+.insight-meta {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-top: 1rem;
+}
+
+.insight-tag {
+    background: var(--hover-color);
+    color: var(--primary-color);
+    padding: 0.25rem 0.75rem;
+    border-radius: 15px;
+    font-size: 0.8rem;
+    margin-right: 0.5rem;
+}
+
+/* Button styling */
+.stButton > button {
+    background-color: var(--primary-color);
+    font-family: 'Roboto', sans-serif;
+    font-weight: 500;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+    width: 100%;
+    margin-top: 1rem;
+    box-shadow: var(--shadow);
+}
+
+.stButton > button:hover {
+    background-color: #303f9f; /* Slightly darker primary color */
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Select box styling */
+.stSelectbox > div > div {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+}
+
+.stSelectbox > div > div:hover {
+    border-color: var(--primary-color);
+}
+
+/* Disclaimer */
+.disclaimer {
+    background: var(--hover-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 2rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    text-align: center;
+}
+
+/* Metrics and charts */
+[data-testid="stMetricValue"] {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    color: var(--primary-color);
+    font-weight: 600;
+    box-shadow: var(--shadow);
+}
+
+[data-testid="stMetricDelta"] {
+    background: rgba(63, 81, 181, 0.05);
+    border: 1px solid rgba(63, 81, 181, 0.1);
+    border-radius: 4px;
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+/* Chart container */
+[data-testid="stPlotlyChart"] {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    box-shadow: var(--shadow);
+}
+
+/* Responsive design */
+@media screen and (max-width: 768px) {
+    .market-container {
+        flex-direction: column;
+    }
+    
+    .market-card {
+        width: 100%;
+    }
+    
+    .main-title {
+        font-size: 1.8rem;
+    }
+    
+    h2 {
+        font-size: 1.5rem;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        padding: 0.5rem 1rem;
+        font-size: 0.9rem;
+    }
+}
+
+/* Layout */
+.intro-box {
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+}
+
+.spacer {
+    height: 20px;
+}
+
+.footer {
+    text-align: center;
+    margin-top: 50px;
+    color: var(--text-secondary);
+    padding: 20px 0;
+    border-top: 1px solid var(--border-color);
+}
+
+/* DataFrames */
+.dataframe {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+}
+
+.dataframe th {
+    background-color: #f5f7ff; /* Light primary color background */
+    color: var(--primary-color);
+    padding: 12px;
+    font-weight: 600;
+}
+
+.dataframe td {
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-color);
+}
+
+/* Prediction Box */
+.prediction-box {
+    background-color: #f5f7ff; /* Light primary color background */
+    color: var(--primary-color);
+    padding: 15px;
+    border-radius: 8px;
+    font-weight: bold;
+    text-align: center;
+    margin-top: 20px;
+    border-left: 4px solid var(--primary-color);
+    box-shadow: var(--shadow);
+}
+
+/* Plots */
+.stPlot {
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+}
+
+/* Sidebar */
+.css-1d391kg {
+    background-color: var(--background-color);
+    border-right: 1px solid var(--border-color);
+}
+
+.css-1d391kg .stButton > button {
+    width: 100%;
+}
+
+/* Market sections */
+.market-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+    margin: 10px 0;
+    box-shadow: var(--shadow);
+    transition: all 0.3s ease;
+}
+
+.market-section:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.market-title {
+    color: var(--primary-color);
+    margin-bottom: 15px;
+    font-size: 1.5em;
+    text-align: center;
+    font-weight: 600;
+}
+
+/* Crypto info styling */
+.crypto-info {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+    box-shadow: var(--shadow);
+}
+
+.crypto-info h3 {
+    color: var(--secondary-color);
+    margin-bottom: 15px;
+    font-weight: 600;
+}
+
+.crypto-info ul {
+    list-style-type: none;
+    padding: 0;
+}
+
+.crypto-info li {
+    background: var(--card-bg);
+    margin: 8px 0;
+    padding: 10px 15px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    transition: all 0.3s ease;
+    color: var(--text-color);
+}
+
+.crypto-info li:hover {
+    background: var(--hover-color);
+    transform: translateX(3px);
+}
+
+/* Quick stats section */
+.quick-stats {
+    display: flex;
+    justify-content: space-between;
+    margin: 30px 0;
+    gap: 15px;
+}
+
+.stat-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 15px;
+    text-align: center;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.stat-card h3 {
+    color: var(--primary-color);
+    margin-bottom: 10px;
+    font-size: 1.2em;
+    font-weight: 600;
+}
+
+.stat-card p {
+    color: var(--text-color);
+    font-size: 0.9em;
+}
+
+/* List styling */
+ul {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--text-color);
+}
+
+li {
+    margin-bottom: 0.5rem;
+    color: var(--text-color);
+}
+
+/* Feature list */
+.feature-list {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: var(--shadow);
+}
+
+.feature-list ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.feature-list li {
+    padding: 0.5rem 0;
+    color: var(--text-color);
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.feature-list li:last-child {
+    border-bottom: none;
+}
+
+.feature-list li:before {
+    content: "→";
+    color: var(--secondary-color);
+    margin-right: 0.5rem;
+}
+
+/* Chart labels and text */
+.js-plotly-plot text {
+    font-size: 14px;
+    font-family: 'Open Sans', system-ui, -apple-system, sans-serif;
+    color: var(--text-color);
+}
+
+.js-plotly-plot .gtitle {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+/* Make chart axis labels more readable */
+.js-plotly-plot .xtitle, .js-plotly-plot .ytitle {
     font-size: 14px;
     font-weight: 500;
+    color: var(--text-secondary);
+}
+
+/* Make chart legend more readable */
+.js-plotly-plot .legend text {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-color);
+}
+
+/* Stock title */
+.stock-title {
+    font-size: 2.2rem;
+    color: var(--primary-color);
+    text-align: center;
+    margin-bottom: 1.5rem;
+    font-weight: 700;
+    font-family: 'Roboto', sans-serif;
 }
