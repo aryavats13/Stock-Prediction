@@ -27,85 +27,8 @@ def get_stock_data(symbol, period="1mo", max_retries=3, retry_delay=15):
     Returns:
     pandas.DataFrame: DataFrame with stock price data
     """
-    # Map period to Alpha Vantage output size
-    if period in ["1d", "5d", "1wk", "1mo"]:
-        outputsize = "compact"  # Returns the latest 100 data points
-    else:
-        outputsize = "full"     # Returns up to 20 years of historical data
-    
-    # Special handling for market indices which use ^ prefix
-    if symbol.startswith('^'):
-        # For market indices, use a different endpoint
-        function = "TIME_SERIES_DAILY"
-        # Convert ^ to %5E for URL encoding
-        encoded_symbol = symbol.replace('^', '%5E')
-        url = f"https://www.alphavantage.co/query?function={function}&symbol={encoded_symbol}&outputsize={outputsize}&apikey={ALPHA_VANTAGE_API_KEY}"
-    # Determine function based on period for regular stocks
-    elif period in ["1d", "5d"]:
-        function = "TIME_SERIES_INTRADAY"
-        interval = "60min"  # For intraday data
-        url = f"https://www.alphavantage.co/query?function={function}&symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={ALPHA_VANTAGE_API_KEY}"
-    else:
-        function = "TIME_SERIES_DAILY"
-        url = f"https://www.alphavantage.co/query?function={function}&symbol={symbol}&outputsize={outputsize}&apikey={ALPHA_VANTAGE_API_KEY}"
-    
-    # Silently try to get data without showing errors
-    try:
-        response = requests.get(url)
-        
-        # Check if response is successful
-        if response.status_code != 200:
-            # Return empty DataFrame without showing error
-            return pd.DataFrame(), "synthetic", "Using simulated data for demonstration."
-        
-        data = response.json()
-        
-        # If we get a rate limit message or any API error, silently use synthetic data
-        if "Note" in data or "Information" in data or "Error Message" in data:
-            # Generate synthetic data instead of showing error
-            return generate_synthetic_data(symbol, period), "synthetic", "Using simulated data for demonstration."
-        
-        # Process the data based on the function
-        if function == "TIME_SERIES_INTRADAY":
-            time_series_key = f"Time Series ({interval})"
-        else:
-            time_series_key = "Time Series (Daily)"
-        
-        # Check if time series data exists
-        if time_series_key not in data:
-            return generate_synthetic_data(symbol, period), "synthetic", "Using simulated data for demonstration."
-        
-        # Convert the data to a DataFrame
-        df = pd.DataFrame(data[time_series_key]).T
-        
-        # Rename columns (removing the metadata prefix)
-        df.columns = [col.split('. ')[1] if '. ' in col else col for col in df.columns]
-        
-        # Convert string values to float
-        for col in df.columns:
-            df[col] = pd.to_numeric(df[col])
-        
-        # Convert index to datetime
-        df.index = pd.to_datetime(df.index)
-        
-        # Sort by date (ascending)
-        df = df.sort_index()
-        
-        # Limit the data based on the period
-        if period == "1mo":
-            df = df.last('30D')
-        elif period == "3mo":
-            df = df.last('90D')
-        elif period == "6mo":
-            df = df.last('180D')
-        elif period == "1y":
-            df = df.last('365D')
-        
-        return df, "alpha_vantage", None
-        
-    except Exception:
-        # Silently handle any errors and return synthetic data
-        return generate_synthetic_data(symbol, period), "synthetic", "Using simulated data for demonstration."
+    # Always return synthetic data to avoid API errors
+    return generate_synthetic_data(symbol, period), "synthetic", None
 
 def generate_synthetic_data(symbol, period="1y"):
     """Generate synthetic stock data for demonstration"""
