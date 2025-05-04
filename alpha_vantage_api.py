@@ -27,8 +27,77 @@ def get_stock_data(symbol, period="1mo", max_retries=3, retry_delay=15):
     Returns:
     pandas.DataFrame: DataFrame with stock price data
     """
-    # Always return synthetic data to avoid API errors
-    return generate_synthetic_data(symbol, period), "synthetic", None
+    try:
+        # Map period to Alpha Vantage output size
+        output_size = "full" if period in ["6mo", "1y"] else "compact"
+        
+        # Special handling for market indices which use ^ prefix
+        if symbol.startswith('^'):
+            # For market indices, use a different endpoint
+            function = "TIME_SERIES_DAILY"
+            # Convert ^ to %5E for URL encoding
+            encoded_symbol = symbol.replace('^', '%5E')
+            url = f"https://www.alphavantage.co/query?function={function}&symbol={encoded_symbol}&outputsize={output_size}&apikey={ALPHA_VANTAGE_API_KEY}"
+        else:
+            url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&outputsize={output_size}&apikey={ALPHA_VANTAGE_API_KEY}"
+        
+        # Try to get the data with retries
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url)
+                data = response.json()
+                
+                # Check for error messages
+                if "Error Message" in data:
+                    raise Exception(f"API Error: {data['Error Message']}")
+                
+                # Check for Information message (usually indicates API limit)
+                if "Information" in data and "API call frequency" in data["Information"]:
+                    raise Exception(f"API Limit: {data['Information']}")
+                
+                # Check if time series data exists
+                time_series_key = "Time Series (Daily)"
+                if time_series_key not in data:
+                    raise Exception(f"No time series data found for {symbol}")
+                
+                # Convert to DataFrame
+                df = pd.DataFrame.from_dict(data[time_series_key], orient="index")
+                
+                # Convert string values to float
+                for col in df.columns:
+                    df[col] = df[col].astype(float)
+                
+                # Rename columns
+                df.columns = [col.split(". ")[1].capitalize() for col in df.columns]
+                
+                # Sort by date and filter based on period
+                df.index = pd.to_datetime(df.index)
+                df = df.sort_index(ascending=True)
+                
+                # Filter based on period
+                if period == "1mo":
+                    df = df.last('30D')
+                elif period == "3mo":
+                    df = df.last('90D')
+                elif period == "6mo":
+                    df = df.last('180D')
+                elif period == "1y":
+                    df = df.last('365D')
+                
+                return df, "alpha_vantage", None
+                
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    # On final attempt, fall back to synthetic data
+                    print(f"Failed to get data from Alpha Vantage after {max_retries} attempts: {str(e)}")
+                    break
+    except Exception as e:
+        print(f"Error accessing Alpha Vantage API: {str(e)}")
+    
+    # Fallback to synthetic data
+    return generate_synthetic_data(symbol, period), "synthetic", "Using synthetic data due to API limitations."
 
 def generate_synthetic_data(symbol, period="1y"):
     """Generate synthetic stock data for demonstration"""

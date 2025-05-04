@@ -1136,37 +1136,21 @@ def app():
         }[x]
     )
     
-    # Load data
+    # Initialize variables
+    info = {}
+    data = None
+    data_valid = False
+    company_name = ticker
+    source = "synthetic"
+    
     try:
-        # Import our alpha_vantage_api module
-        import alpha_vantage_api as av
-        
-        # Only use API for Stock Analysis tab
-        data, source, warning = get_stock_data(ticker, period=period)
-        
-        if data.empty:
-            # st.error(f"No data found for {ticker}. Please check the ticker symbol.")
-            # st.info("Please enter a valid stock ticker symbol and try again.")
-            return
-            
-        # Verify that the data contains the required columns
-        required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-        missing_columns = [col for col in required_columns if col not in data.columns]
-        if missing_columns:
-            # st.error(f"Data for {ticker} is missing required columns: {', '.join(missing_columns)}")
-            # st.info("Please enter a valid stock ticker symbol and try again.")
-            return
-            
-        # Get company info
+        # Get stock info
         try:
-            info, source, warning = get_stock_info(ticker)
-            if warning:
-                # st.sidebar.warning(warning)
-                pass
+            info, info_source, info_warning = get_stock_info(ticker)
         except Exception as e:
-            # st.sidebar.warning(f"Using basic stock info due to API limitations.")
+            st.sidebar.warning(f"Using basic stock info due to API limitations.")
             info = {}
-            
+        
         company_name = info.get('shortName', ticker)
         sector = info.get('sector', 'N/A')
         industry = info.get('industry', 'N/A')
@@ -1175,315 +1159,345 @@ def app():
         st.sidebar.text(f"Sector: {sector}")
         st.sidebar.text(f"Industry: {industry}")
         
-        # Current Price
-        current_price = round(data['Close'].iloc[-1], 2)
-        price_change = round(data['Close'].iloc[-1] - data['Close'].iloc[-2], 2)
-        percent_change = round((price_change / data['Close'].iloc[-2]) * 100, 2)
-        
-        # Format the price change with color
-        if price_change >= 0:
-            price_change_formatted = f"📈 +${price_change} (+{percent_change}%)"
-            price_color = "green"
-        else:
-            price_change_formatted = f"📉 -${abs(price_change)} ({percent_change}%)"
-            price_color = "red"
+        # Get stock data
+        try:
+            data, source, warning = get_stock_data(ticker, period=period)
             
-        st.sidebar.markdown(f"### Current Price: ${current_price}")
-        st.sidebar.markdown(f"<span style='color:{price_color}'>{price_change_formatted}</span>", unsafe_allow_html=True)
+            if data is None or data.empty:
+                st.error(f"No data found for {ticker}. Please check the ticker symbol.")
+                data_valid = False
+            else:
+                # Verify that the data contains the required columns
+                required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                missing_columns = [col for col in required_columns if col not in data.columns]
+                if missing_columns:
+                    st.error(f"Data for {ticker} is missing required columns: {', '.join(missing_columns)}")
+                    data_valid = False
+                else:
+                    data_valid = True
+                    
+                    # Current Price
+                    current_price = round(data['Close'].iloc[-1], 2)
+                    price_change = round(data['Close'].iloc[-1] - data['Close'].iloc[-2], 2)
+                    percent_change = round((price_change / data['Close'].iloc[-2]) * 100, 2)
+                    
+                    # Format the price change with color
+                    if price_change >= 0:
+                        price_change_formatted = f"📈 +${price_change} (+{percent_change}%)"
+                        price_color = "green"
+                    else:
+                        price_change_formatted = f"📉 -${abs(price_change)} ({percent_change}%)"
+                        price_color = "red"
+                        
+                    st.sidebar.markdown(f"### Current Price: ${current_price}")
+                    st.sidebar.markdown(f"<span style='color:{price_color}'>{price_change_formatted}</span>", unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Error loading data: {str(e)}")
+            data_valid = False
         
         # TAB 1: STOCK ANALYSIS
         with tab1:
             st.header(f"{company_name} ({ticker}) Analysis")
             
-            # Interactive chart
-            chart_type = st.selectbox('Select Chart Type', ['Closing Price', 'Candlestick', 'Volume', 'Moving Averages'])
-            
-            if chart_type == 'Closing Price':
-                st.subheader('Closing Price Over Time')
-                fig = px.line(data, y='Close', title=f'{company_name} ({ticker}) Closing Price')
-                fig.update_layout(xaxis_title='Date', yaxis_title='Price ($)')
-                st.plotly_chart(fig, use_container_width=True)
+            if not data_valid:
+                st.warning("Cannot display stock analysis due to data loading issues.")
+            else:
+                # Interactive chart
+                chart_type = st.selectbox('Select Chart Type', ['Closing Price', 'Candlestick', 'Volume', 'Moving Averages'])
                 
-            elif chart_type == 'Candlestick':
-                st.subheader('Candlestick Chart')
-                fig = go.Figure(data=[go.Candlestick(
-                    x=data.index,
-                    open=data['Open'],
-                    high=data['High'],
-                    low=data['Low'],
-                    close=data['Close']
-                )])
-                fig.update_layout(title=f'{company_name} ({ticker}) Candlestick Chart',
-                                  xaxis_title='Date',
-                                  yaxis_title='Price ($)')
-                st.plotly_chart(fig, use_container_width=True)
+                if chart_type == 'Closing Price':
+                    st.subheader('Closing Price Over Time')
+                    fig = px.line(data, y='Close', title=f'{company_name} ({ticker}) Closing Price')
+                    fig.update_layout(xaxis_title='Date', yaxis_title='Price ($)')
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                elif chart_type == 'Candlestick':
+                    st.subheader('Candlestick Chart')
+                    fig = go.Figure(data=[go.Candlestick(
+                        x=data.index,
+                        open=data['Open'],
+                        high=data['High'],
+                        low=data['Low'],
+                        close=data['Close']
+                    )])
+                    fig.update_layout(title=f'{company_name} ({ticker}) Candlestick Chart',
+                                      xaxis_title='Date',
+                                      yaxis_title='Price ($)')
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                elif chart_type == 'Volume':
+                    st.subheader('Trading Volume Over Time')
+                    fig = px.bar(data, y='Volume', title=f'{company_name} ({ticker}) Trading Volume')
+                    fig.update_layout(xaxis_title='Date', yaxis_title='Volume')
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                elif chart_type == 'Moving Averages':
+                    st.subheader('Moving Averages')
+                    ma1 = st.slider('Short MA Days', 5, 50, 20)
+                    ma2 = st.slider('Long MA Days', 50, 200, 100)
+                    
+                    # Calculate moving averages
+                    data[f'MA{ma1}'] = data['Close'].rolling(window=ma1).mean()
+                    data[f'MA{ma2}'] = data['Close'].rolling(window=ma2).mean()
+                    
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close Price'))
+                    fig.add_trace(go.Scatter(x=data.index, y=data[f'MA{ma1}'], mode='lines', name=f'{ma1}-day MA'))
+                    fig.add_trace(go.Scatter(x=data.index, y=data[f'MA{ma2}'], mode='lines', name=f'{ma2}-day MA'))
+                    
+                    fig.update_layout(title=f'{company_name} ({ticker}) Moving Averages',
+                                      xaxis_title='Date',
+                                      yaxis_title='Price ($)')
+                    st.plotly_chart(fig, use_container_width=True)
+        
+                # Don't show the data source disclaimer
+                # if source == "synthetic":
+                #     st.warning("⚠️ **Data Source:** Using simulated data for demonstration purposes. Real market data may vary.")
                 
-            elif chart_type == 'Volume':
-                st.subheader('Trading Volume Over Time')
-                fig = px.bar(data, y='Volume', title=f'{company_name} ({ticker}) Trading Volume')
-                fig.update_layout(xaxis_title='Date', yaxis_title='Volume')
-                st.plotly_chart(fig, use_container_width=True)
+                # Show basic stats
+                st.subheader('Basic Statistics')
                 
-            elif chart_type == 'Moving Averages':
-                st.subheader('Moving Averages')
-                ma1 = st.slider('Short MA Days', 5, 50, 20)
-                ma2 = st.slider('Long MA Days', 50, 200, 100)
-                
-                # Calculate moving averages
-                data[f'MA{ma1}'] = data['Close'].rolling(window=ma1).mean()
-                data[f'MA{ma2}'] = data['Close'].rolling(window=ma2).mean()
-                
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close Price'))
-                fig.add_trace(go.Scatter(x=data.index, y=data[f'MA{ma1}'], mode='lines', name=f'{ma1}-day MA'))
-                fig.add_trace(go.Scatter(x=data.index, y=data[f'MA{ma2}'], mode='lines', name=f'{ma2}-day MA'))
-                
-                fig.update_layout(title=f'{company_name} ({ticker}) Moving Averages',
-                                  xaxis_title='Date',
-                                  yaxis_title='Price ($)')
-                st.plotly_chart(fig, use_container_width=True)
-            
-            # Don't show the data source disclaimer
-            # if source == "synthetic":
-            #     st.warning("⚠️ **Data Source:** Using simulated data for demonstration purposes. Real market data may vary.")
-            
-            # Show basic stats
-            st.subheader('Basic Statistics')
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Opening Price", f"${data['Open'].iloc[-1]:.2f}")
-                st.metric("Highest Price (Period)", f"${data['High'].max():.2f}")
-            with col2:
-                st.metric("Closing Price", f"${data['Close'].iloc[-1]:.2f}")
-                st.metric("Lowest Price (Period)", f"${data['Low'].min():.2f}")
-            with col3:
-                st.metric("Volume", f"{data['Volume'].iloc[-1]:,.0f}")
-                st.metric("Avg. Volume", f"{data['Volume'].mean():,.0f}")
-                
-            # Summary statistics
-            st.subheader('Summary Statistics')
-            st.dataframe(data.describe())
-            
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Opening Price", f"${data['Open'].iloc[-1]:.2f}")
+                    st.metric("Highest Price (Period)", f"${data['High'].max():.2f}")
+                with col2:
+                    st.metric("Closing Price", f"${data['Close'].iloc[-1]:.2f}")
+                    st.metric("Lowest Price (Period)", f"${data['Low'].min():.2f}")
+                with col3:
+                    st.metric("Volume", f"{data['Volume'].iloc[-1]:,.0f}")
+                    st.metric("Avg. Volume", f"{data['Volume'].mean():,.0f}")
+                    
+                # Summary statistics
+                st.subheader('Summary Statistics')
+                st.dataframe(data.describe())
+        
         # TAB 2: PRICE PREDICTION
         with tab2:
-            display_prediction_section(data, ticker)
+            st.header(f"Price Prediction for {company_name} ({ticker})")
+            if not data_valid:
+                st.warning("Cannot display price predictions due to data loading issues.")
+            else:
+                display_prediction_section(data, ticker)
                 
         # TAB 3: ANALYST INSIGHTS
         with tab3:
             st.header(f"Analyst Insights for {company_name} ({ticker})")
             
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Analyst Ratings
-                st.subheader("Analyst Recommendations")
+            if not data_valid:
+                st.warning("Cannot display analyst insights due to data loading issues.")
+            else:
+                col1, col2 = st.columns(2)
                 
-                ratings = get_analyst_ratings(ticker)
-                
-                if ratings:
-                    # Create a horizontal bar chart for analyst ratings
-                    rating_labels = list(ratings['ratings'].keys())
-                    rating_values = list(ratings['ratings'].values())
+                with col1:
+                    # Analyst Ratings
+                    st.subheader("Analyst Recommendations")
                     
-                    fig = go.Figure(go.Bar(
-                        x=rating_values,
-                        y=rating_labels,
-                        orientation='h',
-                        marker=dict(
-                            color=['green', 'lightgreen', 'gray', 'pink', 'red'],
-                            line=dict(color='rgba(0, 0, 0, 0.5)', width=1)
+                    ratings = get_analyst_ratings(ticker)
+                    
+                    if ratings:
+                        # Create a horizontal bar chart for analyst ratings
+                        rating_labels = list(ratings['ratings'].keys())
+                        rating_values = list(ratings['ratings'].values())
+                        
+                        fig = go.Figure(go.Bar(
+                            x=rating_values,
+                            y=rating_labels,
+                            orientation='h',
+                            marker=dict(
+                                color=['green', 'lightgreen', 'gray', 'pink', 'red'],
+                                line=dict(color='rgba(0, 0, 0, 0.5)', width=1)
+                            )
+                        ))
+                        fig.update_layout(
+                            title=f"Analyst Recommendations (Total: {ratings['total']})",
+                            xaxis_title="Number of Analysts",
+                            yaxis=dict(autorange="reversed")  # Reverse the y-axis to show Strong Buy at the top
                         )
-                    ))
-                    fig.update_layout(
-                        title=f"Analyst Recommendations (Total: {ratings['total']})",
-                        xaxis_title="Number of Analysts",
-                        yaxis=dict(autorange="reversed")  # Reverse the y-axis to show Strong Buy at the top
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    if ratings['source'] == 'synthetic':
-                        # st.info("Note: Using synthetic analyst ratings for demonstration.")
-                        pass
-                else:
-                    # st.info("Analyst ratings not available for this stock.")
-                    pass
-            
-            with col2:
-                # Price Targets
-                st.subheader("Price Targets")
-                
-                targets = get_price_targets(ticker)
-                
-                if targets and any(v is not None for v in targets['targets'].values()):
-                    # Extract targets
-                    current = targets['targets'].get('current')
-                    low = targets['targets'].get('low')
-                    average = targets['targets'].get('average')
-                    high = targets['targets'].get('high')
-                    
-                    # Create a gauge chart for price targets
-                    if current and average:
-                        # Calculate upside/downside
-                        if current > 0 and average > 0:
-                            percent_change = ((average - current) / current) * 100
-                            change_text = f"{percent_change:.1f}% {'Upside' if percent_change >= 0 else 'Downside'}"
-                        else:
-                            change_text = "N/A"
-                        
-                        # Create the figure
-                        fig = go.Figure()
-                        
-                        # Add current price marker
-                        if current:
-                            fig.add_trace(go.Indicator(
-                                mode = "number+gauge+delta",
-                                value = current,
-                                domain = {'x': [0, 1], 'y': [0, 1]},
-                                title = {'text': f"Current: ${current:.2f}<br>Target: ${average:.2f}<br>{change_text}"},
-                                gauge = {
-                                    'shape': "bullet",
-                                    'axis': {'range': [None, high * 1.1 if high else average * 1.5]},
-                                    'threshold': {
-                                        'line': {'color': "red", 'width': 2},
-                                        'thickness': 0.75,
-                                        'value': average
-                                    },
-                                    'steps': [
-                                        {'range': [0, low if low else current * 0.8], 'color': "lightgray"},
-                                        {'range': [low if low else current * 0.8, high if high else average * 1.2], 'color': "gray"}
-                                    ],
-                                    'bar': {'color': "black"}
-                                },
-                                delta = {'reference': average, 'relative': True, 'position': "top"}
-                            ))
-                        
-                        fig.update_layout(height=200)
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        # Show the actual values
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Low Target", f"${low:.2f}" if low else "N/A")
-                        with col2:
-                            st.metric("Average Target", f"${average:.2f}" if average else "N/A")
-                        with col3:
-                            st.metric("High Target", f"${high:.2f}" if high else "N/A")
+                        if ratings['source'] == 'synthetic':
+                            # st.info("Note: Using synthetic analyst ratings for demonstration.")
+                            pass
                     else:
-                        # st.info("Complete price target data not available.")
+                        # st.info("Analyst ratings not available for this stock.")
+                        pass
+            
+                with col2:
+                    # Price Targets
+                    st.subheader("Price Targets")
+                    
+                    targets = get_price_targets(ticker)
+                
+                    if targets and any(v is not None for v in targets['targets'].values()):
+                        # Extract targets
+                        current = targets['targets'].get('current')
+                        low = targets['targets'].get('low')
+                        average = targets['targets'].get('average')
+                        high = targets['targets'].get('high')
+                    
+                        # Create a gauge chart for price targets
+                        if current and average:
+                            # Calculate upside/downside
+                            if current > 0 and average > 0:
+                                percent_change = ((average - current) / current) * 100
+                                change_text = f"{percent_change:.1f}% {'Upside' if percent_change >= 0 else 'Downside'}"
+                            else:
+                                change_text = "N/A"
+                        
+                            # Create the figure
+                            fig = go.Figure()
+                            
+                            # Add current price marker
+                            if current:
+                                fig.add_trace(go.Indicator(
+                                    mode = "number+gauge+delta",
+                                    value = current,
+                                    domain = {'x': [0, 1], 'y': [0, 1]},
+                                    title = {'text': f"Current: ${current:.2f}<br>Target: ${average:.2f}<br>{change_text}"},
+                                    gauge = {
+                                        'shape': "bullet",
+                                        'axis': {'range': [None, high * 1.1 if high else average * 1.5]},
+                                        'threshold': {
+                                            'line': {'color': "red", 'width': 2},
+                                            'thickness': 0.75,
+                                            'value': average
+                                        },
+                                        'steps': [
+                                            {'range': [0, low if low else current * 0.8], 'color': "lightgray"},
+                                            {'range': [low if low else current * 0.8, high if high else average * 1.2], 'color': "gray"}
+                                        ],
+                                        'bar': {'color': "black"}
+                                    },
+                                    delta = {'reference': average, 'relative': True, 'position': "top"}
+                                ))
+                            
+                            fig.update_layout(height=200)
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Show the actual values
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Low Target", f"${low:.2f}" if low else "N/A")
+                            with col2:
+                                st.metric("Average Target", f"${average:.2f}" if average else "N/A")
+                            with col3:
+                                st.metric("High Target", f"${high:.2f}" if high else "N/A")
+                        else:
+                            # st.info("Complete price target data not available.")
+                            pass
+                        
+                        if targets['source'] == 'synthetic':
+                            # st.info("Note: Using synthetic price targets for demonstration.")
+                            pass
+                    else:
+                        # st.info("Price targets not available for this stock.")
+                        pass
+            
+                # News and Sentiment
+                st.subheader("Recent News & Sentiment")
+                
+                news = get_news_sentiment(ticker)
+            
+                if news:
+                    # Calculate overall sentiment
+                    sentiment = news['overall_sentiment']
+                    
+                    # Create a gauge for sentiment
+                    fig = go.Figure(go.Indicator(
+                        mode = "gauge+number",
+                        value = sentiment * 100,  # Convert to -100 to 100 scale
+                        domain = {'x': [0, 1], 'y': [0, 1]},
+                        title = {'text': "News Sentiment Score"},
+                        gauge = {
+                            'axis': {'range': [-100, 100]},
+                            'bar': {'color': "darkblue"},
+                            'steps': [
+                                {'range': [-100, -33], 'color': "red"},
+                                {'range': [-33, 33], 'color': "yellow"},
+                                {'range': [33, 100], 'color': "green"}
+                            ],
+                            'threshold': {
+                                'line': {'color': "black", 'width': 4},
+                                'thickness': 0.75,
+                                'value': sentiment * 100
+                            }
+                        }
+                    ))
+                    
+                    fig.update_layout(height=250)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    if news['source'] == 'synthetic':
+                        # st.info("Note: Using synthetic news and sentiment for demonstration.")
                         pass
                     
-                    if targets['source'] == 'synthetic':
-                        # st.info("Note: Using synthetic price targets for demonstration.")
+                    # Display news items in a nice format
+                    for item in news['news']:
+                        with st.expander(f"{item['date']} - {item['title']}"):
+                            st.write(f"**Date:** {item['date']}")
+                            st.write(f"**Headline:** {item['title']}")
+                            st.write(f"**Source:** {item['source']}")
+                            st.write(f"**Sentiment:** {'Positive' if item['sentiment'] > 0.2 else 'Negative' if item['sentiment'] < -0.2 else 'Neutral'}")
+                            if 'url' in item:
+                                st.write(f"[Read more]({item['url']})")
+                else:
+                    # st.info("Recent news could not be retrieved.")
+                    pass
+                
+                # Historical accuracy section
+                st.subheader("Historical Prediction Performance")
+                historical_accuracy = get_historical_accuracy(ticker)
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if historical_accuracy['overall_accuracy'] != 'N/A':
+                        # Create a gauge for overall accuracy
+                        fig = go.Figure(go.Indicator(
+                            mode = "gauge+number",
+                            value = historical_accuracy['overall_accuracy'],
+                            domain = {'x': [0, 1], 'y': [0, 1]},
+                            title = {'text': "Overall Prediction Accuracy"},
+                            gauge = {
+                                'axis': {'range': [None, 100]},
+                                'bar': {'color': "darkblue"},
+                                'steps': [
+                                    {'range': [0, 33], 'color': "red"},
+                                    {'range': [33, 66], 'color': "yellow"},
+                                    {'range': [66, 100], 'color': "green"}
+                                ]
+                            }
+                        ))
+                        fig.update_layout(height=300)
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        # st.info("Historical accuracy data not available.")
                         pass
-                else:
-                    # st.info("Price targets not available for this stock.")
-                    pass
-            
-            # News and Sentiment
-            st.subheader("Recent News & Sentiment")
-            
-            news = get_news_sentiment(ticker)
-            
-            if news:
-                # Calculate overall sentiment
-                sentiment = news['overall_sentiment']
                 
-                # Create a gauge for sentiment
-                fig = go.Figure(go.Indicator(
-                    mode = "gauge+number",
-                    value = sentiment * 100,  # Convert to -100 to 100 scale
-                    domain = {'x': [0, 1], 'y': [0, 1]},
-                    title = {'text': "News Sentiment Score"},
-                    gauge = {
-                        'axis': {'range': [-100, 100]},
-                        'bar': {'color': "darkblue"},
-                        'steps': [
-                            {'range': [-100, -33], 'color': "red"},
-                            {'range': [-33, 33], 'color': "yellow"},
-                            {'range': [33, 100], 'color': "green"}
-                        ],
-                        'threshold': {
-                            'line': {'color': "black", 'width': 4},
-                            'thickness': 0.75,
-                            'value': sentiment * 100
-                        }
-                    }
-                ))
-                
-                fig.update_layout(height=250)
-                st.plotly_chart(fig, use_container_width=True)
-                
-                if news['source'] == 'synthetic':
-                    # st.info("Note: Using synthetic news and sentiment for demonstration.")
-                    pass
-                
-                # Display news items in a nice format
-                for item in news['news']:
-                    with st.expander(f"{item['date']} - {item['title']}"):
-                        st.write(f"**Date:** {item['date']}")
-                        st.write(f"**Headline:** {item['title']}")
-                        st.write(f"**Source:** {item['source']}")
-                        st.write(f"**Sentiment:** {'Positive' if item['sentiment'] > 0.2 else 'Negative' if item['sentiment'] < -0.2 else 'Neutral'}")
-                        if 'url' in item:
-                            st.write(f"[Read more]({item['url']})")
-            else:
-                # st.info("Recent news could not be retrieved.")
-                pass
-                
-            # Historical accuracy section
-            st.subheader("Historical Prediction Performance")
-            historical_accuracy = get_historical_accuracy(ticker)
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if historical_accuracy['overall_accuracy'] != 'N/A':
-                    # Create a gauge for overall accuracy
-                    fig = go.Figure(go.Indicator(
-                        mode = "gauge+number",
-                        value = historical_accuracy['overall_accuracy'],
-                        domain = {'x': [0, 1], 'y': [0, 1]},
-                        title = {'text': "Overall Prediction Accuracy"},
-                        gauge = {
-                            'axis': {'range': [None, 100]},
-                            'bar': {'color': "darkblue"},
-                            'steps': [
-                                {'range': [0, 33], 'color': "red"},
-                                {'range': [33, 66], 'color': "yellow"},
-                                {'range': [66, 100], 'color': "green"}
-                            ]
-                        }
-                    ))
-                    fig.update_layout(height=300)
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    # st.info("Historical accuracy data not available.")
-                    pass
-            
-            with col2:
-                if historical_accuracy['recent_accuracy'] != 'N/A':
-                    # Create a gauge for recent accuracy
-                    fig = go.Figure(go.Indicator(
-                        mode = "gauge+number",
-                        value = historical_accuracy['recent_accuracy'],
-                        domain = {'x': [0, 1], 'y': [0, 1]},
-                        title = {'text': "Recent 30-Day Accuracy"},
-                        gauge = {
-                            'axis': {'range': [None, 100]},
-                            'bar': {'color': "darkblue"},
-                            'steps': [
-                                {'range': [0, 33], 'color': "red"},
-                                {'range': [33, 66], 'color': "yellow"},
-                                {'range': [66, 100], 'color': "green"}
-                            ]
-                        }
-                    ))
-                    fig.update_layout(height=300)
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    # st.info("Recent accuracy data not available.")
-                    pass
+                with col2:
+                    if historical_accuracy['recent_accuracy'] != 'N/A':
+                        # Create a gauge for recent accuracy
+                        fig = go.Figure(go.Indicator(
+                            mode = "gauge+number",
+                            value = historical_accuracy['recent_accuracy'],
+                            domain = {'x': [0, 1], 'y': [0, 1]},
+                            title = {'text': "Recent 30-Day Accuracy"},
+                            gauge = {
+                                'axis': {'range': [None, 100]},
+                                'bar': {'color': "darkblue"},
+                                'steps': [
+                                    {'range': [0, 33], 'color': "red"},
+                                    {'range': [33, 66], 'color': "yellow"},
+                                    {'range': [66, 100], 'color': "green"}
+                                ]
+                            }
+                        ))
+                        fig.update_layout(height=300)
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        # st.info("Recent accuracy data not available.")
+                        pass
             
             # Don't show the disclaimer
             # st.warning("⚠️ **Data Source Disclaimer:** Analyst ratings, price targets, and news are scraped from public financial websites and may not always be accurate or up-to-date. This information should be used as one of many inputs in your investment research process.")
