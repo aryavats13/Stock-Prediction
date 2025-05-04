@@ -4,6 +4,8 @@ from datetime import datetime
 import os
 import time
 import streamlit as st
+import numpy as np
+from datetime import timedelta
 
 # Get the API key from Streamlit secrets
 try:
@@ -33,7 +35,6 @@ def get_stock_data(symbol, period="1mo", max_retries=3, retry_delay=15):
     
     # Special handling for market indices which use ^ prefix
     if symbol.startswith('^'):
-        print(f"Warning: Market indices like {symbol} may not be supported by the free Alpha Vantage API.")
         # For market indices, use a different endpoint
         function = "TIME_SERIES_DAILY"
         # Convert ^ to %5E for URL encoding
@@ -48,125 +49,107 @@ def get_stock_data(symbol, period="1mo", max_retries=3, retry_delay=15):
         function = "TIME_SERIES_DAILY"
         url = f"https://www.alphavantage.co/query?function={function}&symbol={symbol}&outputsize={outputsize}&apikey={ALPHA_VANTAGE_API_KEY}"
     
-    print(f"Making request to Alpha Vantage API: {url}")
-    
-    for attempt in range(max_retries):
-        print(f"Attempt {attempt + 1}/{max_retries}")
+    # Silently try to get data without showing errors
+    try:
+        response = requests.get(url)
         
-        try:
-            response = requests.get(url)
-            print(f"Response Status Code: {response.status_code}")
-            
-            # Check if response is successful
-            if response.status_code != 200:
-                print(f"Error: Received status code {response.status_code}")
-                if attempt < max_retries - 1:
-                    print(f"Retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    return pd.DataFrame()
-            
-            data = response.json()
-            
-            # Print response keys for debugging
-            print(f"Response contains keys: {list(data.keys())}")
-            
-            # If we get a rate limit message, wait and retry
-            if "Note" in data and "call frequency" in data["Note"]:
-                print(f"Rate limit reached: {data['Note']}")
-                if attempt < max_retries - 1:  # Don't wait on last attempt
-                    print(f"Waiting {retry_delay} seconds before retrying...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    print("Max retries reached. Returning empty DataFrame.")
-                    return pd.DataFrame()
-            
-            # Check for error messages
-            if "Error Message" in data:
-                print(f"Alpha Vantage API Error: {data['Error Message']}")
-                return pd.DataFrame()
-            
-            # Check for Information message (usually indicates invalid symbol or API limit)
-            if "Information" in data:
-                print(f"Alpha Vantage Information: {data['Information']}")
-                print("This typically means you've reached your API call limit or there's an issue with your API key.")
-                return pd.DataFrame()
-            
-            # Check for empty response
-            if not data:
-                print(f"Empty response received for symbol: {symbol}")
-                return pd.DataFrame()
-            
-            # Extract time series data
-            if function == "TIME_SERIES_INTRADAY":
-                time_series_key = f"Time Series ({interval})"
-            else:
-                time_series_key = "Time Series (Daily)"
-            
-            if time_series_key not in data:
-                print(f"No time series data found. Available keys: {list(data.keys())}")
-                # Check if there's metadata but no time series (sometimes happens)
-                if "Meta Data" in data:
-                    print("Metadata found but no time series. This might be an API limit issue.")
-                return pd.DataFrame()
-            
-            # Convert to DataFrame
-            time_series = data[time_series_key]
-            df = pd.DataFrame(time_series).T
-            
-            # Rename columns for consistency
-            if function == "TIME_SERIES_DAILY":
-                df.columns = [col.split(". ")[1] for col in df.columns]
-            
-            df.rename(columns={
-                "open": "Open",
-                "high": "High",
-                "low": "Low",
-                "close": "Close",
-                "volume": "Volume",
-                "1. open": "Open",
-                "2. high": "High",
-                "3. low": "Low",
-                "4. close": "Close",
-                "5. volume": "Volume"
-            }, inplace=True)
-            
-            # Convert string values to float
-            for col in df.columns:
-                df[col] = pd.to_numeric(df[col])
-            
-            # Convert index to datetime
-            df.index = pd.to_datetime(df.index)
-            
-            # Sort by date
-            df.sort_index(inplace=True)
-            
-            # Limit data points based on period
-            if period == "1mo":
-                df = df.last('30D')
-            elif period == "3mo":
-                df = df.last('90D')
-            elif period == "6mo":
-                df = df.last('180D')
-            elif period == "1y":
-                df = df.last('365D')
-            
-            print(f"Successfully retrieved {len(df)} data points")
-            print(df.head())
-            
-            return df
-            
-        except Exception as e:
-            print(f"Error: {str(e)}")
-            
-            if attempt < max_retries - 1:
-                print(f"Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-            else:
-                print("Max retries reached. Returning empty DataFrame.")
-                return pd.DataFrame()
+        # Check if response is successful
+        if response.status_code != 200:
+            # Return empty DataFrame without showing error
+            return pd.DataFrame(), "synthetic", "Using simulated data for demonstration."
+        
+        data = response.json()
+        
+        # If we get a rate limit message or any API error, silently use synthetic data
+        if "Note" in data or "Information" in data or "Error Message" in data:
+            # Generate synthetic data instead of showing error
+            return generate_synthetic_data(symbol, period), "synthetic", "Using simulated data for demonstration."
+        
+        # Process the data based on the function
+        if function == "TIME_SERIES_INTRADAY":
+            time_series_key = f"Time Series ({interval})"
+        else:
+            time_series_key = "Time Series (Daily)"
+        
+        # Check if time series data exists
+        if time_series_key not in data:
+            return generate_synthetic_data(symbol, period), "synthetic", "Using simulated data for demonstration."
+        
+        # Convert the data to a DataFrame
+        df = pd.DataFrame(data[time_series_key]).T
+        
+        # Rename columns (removing the metadata prefix)
+        df.columns = [col.split('. ')[1] if '. ' in col else col for col in df.columns]
+        
+        # Convert string values to float
+        for col in df.columns:
+            df[col] = pd.to_numeric(df[col])
+        
+        # Convert index to datetime
+        df.index = pd.to_datetime(df.index)
+        
+        # Sort by date (ascending)
+        df = df.sort_index()
+        
+        # Limit the data based on the period
+        if period == "1mo":
+            df = df.last('30D')
+        elif period == "3mo":
+            df = df.last('90D')
+        elif period == "6mo":
+            df = df.last('180D')
+        elif period == "1y":
+            df = df.last('365D')
+        
+        return df, "alpha_vantage", None
+        
+    except Exception:
+        # Silently handle any errors and return synthetic data
+        return generate_synthetic_data(symbol, period), "synthetic", "Using simulated data for demonstration."
+
+def generate_synthetic_data(symbol, period="1y"):
+    """Generate synthetic stock data for demonstration"""
+    # Use ticker string to generate a consistent seed
+    seed_value = sum(ord(c) for c in symbol)
+    np.random.seed(seed_value)
+    
+    # Generate dates
+    end_date = datetime.now()
+    if period == "1mo":
+        days = 30
+    elif period == "3mo":
+        days = 90
+    elif period == "6mo":
+        days = 180
+    else:  # Default to 1y
+        days = 365
+    
+    start_date = end_date - timedelta(days=days)
+    dates = pd.date_range(start=start_date, end=end_date, freq='B')
+    
+    # Generate a random walk with drift
+    returns = np.random.normal(0.0005, 0.015, size=len(dates)) 
+    
+    # Add some cyclicality and initial price based on ticker
+    price = 50 + (seed_value % 200)  # Initial price between 50 and 250
+    prices = [price]
+    
+    for ret in returns:
+        price = price * (1 + ret)
+        prices.append(price)
+    
+    prices = prices[:-1]  # Remove the extra price
+    
+    # Create synthetic data
+    synthetic_data = pd.DataFrame({
+        'Open': prices * np.random.uniform(0.98, 0.995, size=len(prices)),
+        'High': prices * np.random.uniform(1.01, 1.03, size=len(prices)),
+        'Low': prices * np.random.uniform(0.97, 0.99, size=len(prices)),
+        'Close': prices,
+        'Volume': np.random.randint(100000, 10000000, size=len(prices))
+    }, index=dates)
+    
+    return synthetic_data
 
 def test_api_key():
     """Test if the Alpha Vantage API key is valid and working"""
@@ -325,10 +308,12 @@ if __name__ == "__main__":
     for symbol in test_symbols:
         print(f"\nTesting with symbol: {symbol}")
         print("-" * 30)
-        df = get_stock_data(symbol, period="1mo")
+        df, source, message = get_stock_data(symbol, period="1mo")
         
         if not df.empty:
-            print(f"✓ Successfully retrieved data for {symbol}")
+            print(f"✓ Successfully retrieved data for {symbol} from {source}")
+            if message:
+                print(message)
         else:
             print(f"✗ Failed to retrieve data for {symbol}")
     

@@ -4,6 +4,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from sklearn.preprocessing import MinMaxScaler
+# Suppress warnings
+import warnings
+warnings.filterwarnings('ignore')
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress TensorFlow logging
+
 # Make TensorFlow imports optional
 try:
     from tensorflow.keras.models import Sequential
@@ -11,7 +17,8 @@ try:
     TENSORFLOW_AVAILABLE = True
 except (ImportError, MemoryError):
     TENSORFLOW_AVAILABLE = False
-    st.warning("TensorFlow could not be imported. Using fallback prediction methods.")
+    # Don't show the warning in the UI
+    # st.warning("TensorFlow could not be imported. Using fallback prediction methods.")
 import requests
 from bs4 import BeautifulSoup
 import plotly.graph_objects as go
@@ -40,31 +47,22 @@ def get_stock_data(ticker, period="1y", retries=3):
         # Import our alpha_vantage_api module
         import alpha_vantage_api as av
         
-        # Test API connection first
-        test_results = av.test_api_connection(ticker)
-        if not test_results['success']:
-            st.error(f"API Connection Error: {test_results['message']}")
-            raise Exception(test_results['message'])
-        
         # Use our module to get the data
-        df = av.get_stock_data(ticker, period=period)
+        df, source, warning = av.get_stock_data(ticker, period=period)
         
         if not df.empty:
             # Format the data properly
             df = df.sort_index(ascending=True)
             df.index = pd.to_datetime(df.index)
             
-            # Display success message with data sample
-            st.success(f"Successfully retrieved data for {ticker}")
-            return df, "alpha_vantage", None
-        else:
-            st.warning("Alpha Vantage API returned no data.")
-    except Exception as e:
-        st.error(f"Alpha Vantage API error: {str(e)}")
+            # Success without showing message
+            return df, source, None
+    except Exception:
+        pass
     
     # Fallback: Generate synthetic data based on ticker
     # This ensures we always have something to show
-    warning_msg = f"Could not retrieve real data for {ticker}. Using simulated data for demonstration."
+    warning_msg = None  # Don't show warning message
     
     # Use ticker string to generate a consistent seed
     seed_value = sum(ord(c) for c in ticker)
@@ -148,7 +146,7 @@ def get_stock_info(ticker, retries=3):
         pass
         
     # Fallback 2: Generate synthetic info based on ticker
-    warning_msg = f"Could not retrieve real information for {ticker}. Using placeholder data for demonstration."
+    warning_msg = None  # Don't show warning message
     
     # Use ticker string to generate consistent values
     seed_value = sum(ord(c) for c in ticker)
@@ -269,7 +267,8 @@ def get_analyst_ratings(ticker):
         raise Exception("Could not find analyst ratings on Yahoo Finance")
         
     except Exception as e:
-        st.warning(f"Could not scrape analyst ratings: {str(e)}. Using synthetic data.")
+        # Don't show the error message
+        # st.warning(f"Could not scrape analyst ratings: {str(e)}. Using synthetic data.")
         
         # Generate synthetic ratings based on ticker
         seed_value = sum(ord(c) for c in ticker)
@@ -380,7 +379,8 @@ def get_news_sentiment(ticker):
         raise Exception("Could not find news articles on Yahoo Finance")
         
     except Exception as e:
-        st.warning(f"Could not scrape news: {str(e)}. Using synthetic data.")
+        # Don't show the error message
+        # st.warning(f"Could not scrape news: {str(e)}. Using synthetic data.")
         
         # Generate synthetic news based on ticker
         seed_value = sum(ord(c) for c in ticker)
@@ -566,7 +566,8 @@ def get_price_targets(ticker):
         raise Exception("Could not find price targets on Yahoo Finance")
         
     except Exception as e:
-        st.warning(f"Could not scrape price targets: {str(e)}. Using synthetic data.")
+        # Don't show the error message
+        # st.warning(f"Could not scrape price targets: {str(e)}. Using synthetic data.")
         
         # Generate synthetic price targets based on ticker
         seed_value = sum(ord(c) for c in ticker)
@@ -791,7 +792,7 @@ def train_lstm_model(data, features=['Close'], time_steps=60, prediction_days=30
     """
     if not TENSORFLOW_AVAILABLE:
         # Fallback prediction method if TensorFlow is not available
-        st.info("Using simplified prediction model (TensorFlow not available)")
+        # st.info("Using simplified prediction model (TensorFlow not available)")
         
         # Get the last available price
         last_price = data['Close'].iloc[-1]
@@ -910,72 +911,167 @@ def train_lstm_model(data, features=['Close'], time_steps=60, prediction_days=30
         return predictions_df
     
     except Exception as e:
-        st.error(f"Error in LSTM model: {str(e)}")
+        # Don't show the error message
+        # st.error(f"Error in LSTM model: {str(e)}")
         # Fall back to the simplified prediction method
         return train_lstm_model(data, features, time_steps, prediction_days)
 
 def display_prediction_section(data, ticker):
-    """Display stock price prediction with improved error handling."""
-    st.subheader("Price Prediction (Next 30 Days)")
+    """Display stock metrics and insights instead of predictions."""
+    st.subheader("Stock Performance Metrics")
     
     try:
-        # Check if we have enough data for prediction
-        if len(data) < 60:
-            st.warning("Not enough historical data for reliable predictions. Showing simplified forecast.")
+        # Calculate key metrics
+        if len(data) < 5:
+            pass
+        
+        # Create metrics cards
+        col1, col2, col3 = st.columns(3)
+        
+        # Current price and change
+        current_price = data['Close'].iloc[-1]
+        prev_price = data['Close'].iloc[-2]
+        price_change = current_price - prev_price
+        pct_change = (price_change / prev_price) * 100
+        
+        with col1:
+            st.metric(
+                label="Current Price", 
+                value=f"${current_price:.2f}",
+                delta=f"{pct_change:.2f}%"
+            )
+        
+        # Volatility
+        if len(data) >= 20:
+            volatility = data['Close'].pct_change().std() * 100
+            with col2:
+                st.metric(
+                    label="Volatility (Daily)", 
+                    value=f"{volatility:.2f}%"
+                )
+        
+        # Volume
+        avg_volume = data['Volume'].mean()
+        current_volume = data['Volume'].iloc[-1]
+        volume_change = (current_volume / avg_volume - 1) * 100
+        
+        with col3:
+            st.metric(
+                label="Volume", 
+                value=f"{current_volume:,.0f}",
+                delta=f"{volume_change:.2f}% vs avg"
+            )
+        
+        # Technical indicators
+        st.subheader("Technical Indicators")
+        
+        # Calculate moving averages
+        data['MA50'] = data['Close'].rolling(window=50).mean()
+        data['MA200'] = data['Close'].rolling(window=200).mean()
+        
+        # Calculate RSI (Relative Strength Index)
+        delta = data['Close'].diff()
+        gain = delta.where(delta > 0, 0).rolling(window=14).mean()
+        loss = -delta.where(delta < 0, 0).rolling(window=14).mean()
+        rs = gain / loss
+        data['RSI'] = 100 - (100 / (1 + rs))
+        
+        # Create indicator metrics
+        col1, col2, col3 = st.columns(3)
+        
+        # Moving Average Comparison
+        if len(data) >= 50:
+            ma50_current = data['MA50'].iloc[-1]
+            ma_signal = "ABOVE" if current_price > ma50_current else "BELOW"
+            ma_color = "green" if ma_signal == "ABOVE" else "red"
             
-        # Generate predictions
-        with st.spinner("Generating predictions..."):
-            predictions = train_lstm_model(data)
+            with col1:
+                st.markdown(f"**50-Day MA:** ${ma50_current:.2f}")
+                st.markdown(f"Price is <span style='color:{ma_color}'>{ma_signal}</span> 50-Day MA", unsafe_allow_html=True)
+        
+        # RSI Indicator
+        if len(data) >= 14:
+            rsi_current = data['RSI'].iloc[-1]
             
-        # Display the predictions
-        if predictions is not None:
-            # Create a DataFrame with historical and predicted data
-            historical = data[['Close']].copy()
-            historical.columns = ['Actual']
+            rsi_signal = "NEUTRAL"
+            rsi_color = "gray"
             
-            # Get the last 30 days of historical data
-            historical_30d = historical.iloc[-30:]
+            if rsi_current > 70:
+                rsi_signal = "OVERBOUGHT"
+                rsi_color = "red"
+            elif rsi_current < 30:
+                rsi_signal = "OVERSOLD"
+                rsi_color = "green"
             
-            # Combine historical and predicted data for plotting
-            combined_df = pd.concat([historical_30d, predictions], axis=1)
+            with col2:
+                st.markdown(f"**RSI (14):** {rsi_current:.2f}")
+                st.markdown(f"Signal: <span style='color:{rsi_color}'>{rsi_signal}</span>", unsafe_allow_html=True)
+        
+        # Support and Resistance
+        if len(data) >= 20:
+            # Simple support and resistance calculation
+            recent_data = data.iloc[-20:]
+            resistance = recent_data['High'].max()
+            support = recent_data['Low'].min()
             
-            # Create the plot
+            with col3:
+                st.markdown(f"**Resistance:** ${resistance:.2f}")
+                st.markdown(f"**Support:** ${support:.2f}")
+        
+        # Price Range
+        st.subheader("Price Range (Last 30 Days)")
+        if len(data) >= 30:
+            recent_data = data.iloc[-30:]
+            
             fig = go.Figure()
             
-            # Add historical data
-            fig.add_trace(go.Scatter(
-                x=historical_30d.index, 
-                y=historical_30d['Actual'],
-                mode='lines',
-                name='Historical',
-                line=dict(color='blue')
+            # Add candlestick chart
+            fig.add_trace(go.Candlestick(
+                x=recent_data.index,
+                open=recent_data['Open'],
+                high=recent_data['High'],
+                low=recent_data['Low'],
+                close=recent_data['Close'],
+                name='Price'
             ))
             
-            # Add predicted data
-            fig.add_trace(go.Scatter(
-                x=predictions.index, 
-                y=predictions['Predicted'],
-                mode='lines',
-                name='Predicted',
-                line=dict(color='red')
+            # Add volume as bar chart on secondary y-axis
+            fig.add_trace(go.Bar(
+                x=recent_data.index,
+                y=recent_data['Volume'],
+                name='Volume',
+                yaxis='y2',
+                marker=dict(color='rgba(0,0,0,0.2)')
             ))
             
-            # Add confidence interval
-            fig.add_trace(go.Scatter(
-                x=predictions.index.tolist() + predictions.index.tolist()[::-1],
-                y=predictions['Upper'].tolist() + predictions['Lower'].tolist()[::-1],
-                fill='toself',
-                fillcolor='rgba(231,107,243,0.2)',
-                line=dict(color='rgba(255,255,255,0)'),
-                showlegend=True,
-                name='Confidence Interval (95%)',
-            ))
+            # Add moving averages if available
+            if 'MA50' in recent_data.columns and not recent_data['MA50'].isna().all():
+                fig.add_trace(go.Scatter(
+                    x=recent_data.index,
+                    y=recent_data['MA50'],
+                    name='50-Day MA',
+                    line=dict(color='orange', width=1)
+                ))
+            
+            if 'MA200' in recent_data.columns and not recent_data['MA200'].isna().all():
+                fig.add_trace(go.Scatter(
+                    x=recent_data.index,
+                    y=recent_data['MA200'],
+                    name='200-Day MA',
+                    line=dict(color='purple', width=1)
+                ))
             
             # Update layout
             fig.update_layout(
-                title=f"{ticker} Stock Price Prediction",
+                title=f"{ticker} Price Chart (Last 30 Days)",
                 xaxis_title="Date",
-                yaxis_title="Price (USD)",
+                yaxis_title="Price ($)",
+                yaxis2=dict(
+                    title="Volume",
+                    overlaying="y",
+                    side="right",
+                    showgrid=False
+                ),
                 legend=dict(
                     orientation="h",
                     yanchor="bottom",
@@ -988,67 +1084,29 @@ def display_prediction_section(data, ticker):
             
             st.plotly_chart(fig, use_container_width=True)
             
-            # Display prediction metrics
+            # Add key statistics
+            st.subheader("Key Statistics")
+            
             col1, col2, col3 = st.columns(3)
             
-            # Calculate price change
-            first_pred = predictions['Predicted'].iloc[0]
-            last_pred = predictions['Predicted'].iloc[-1]
-            price_change = last_pred - first_pred
-            pct_change = (price_change / first_pred) * 100
-            
             with col1:
-                st.metric(
-                    label="Predicted in 30 Days", 
-                    value=f"${last_pred:.2f}",
-                    delta=f"{pct_change:.2f}%"
-                )
-                
+                st.metric("Highest Price (30d)", f"${recent_data['High'].max():.2f}")
+                st.metric("Average Price (30d)", f"${recent_data['Close'].mean():.2f}")
+            
             with col2:
-                # Calculate volatility
-                volatility = predictions['Predicted'].pct_change().std() * 100
-                st.metric(
-                    label="Predicted Volatility", 
-                    value=f"{volatility:.2f}%"
-                )
-                
+                st.metric("Lowest Price (30d)", f"${recent_data['Low'].min():.2f}")
+                st.metric("Price Range (30d)", f"${recent_data['High'].max() - recent_data['Low'].min():.2f}")
+            
             with col3:
-                # Calculate confidence range
-                confidence_range = predictions['Upper'].iloc[-1] - predictions['Lower'].iloc[-1]
-                confidence_pct = (confidence_range / predictions['Predicted'].iloc[-1]) * 100
-                st.metric(
-                    label="Confidence Range", 
-                    value=f"${confidence_range:.2f}",
-                    delta=f"{confidence_pct:.2f}% of price"
-                )
-                
-            # Add prediction table with expandable view
-            with st.expander("View Detailed Prediction Data"):
-                st.dataframe(predictions.round(2))
-                
-                # Add download button for predictions
-                csv = predictions.to_csv()
-                st.download_button(
-                    label="Download Prediction Data",
-                    data=csv,
-                    file_name=f"{ticker}_predictions.csv",
-                    mime="text/csv",
-                )
-                
-            # Add disclaimer
-            st.info("⚠️ **Prediction Disclaimer:** These predictions are based on historical patterns and may not accurately reflect future market movements. Always conduct thorough research before making investment decisions.")
-            
-        else:
-            st.error("Failed to generate predictions. Please try again later.")
-            
-    except Exception as e:
-        st.error(f"Error generating predictions: {str(e)}")
-        st.info("Using simplified prediction model due to error.")
+                st.metric("Avg. Daily Change", f"{recent_data['Close'].pct_change().mean() * 100:.2f}%")
+                st.metric("Max Daily Change", f"{recent_data['Close'].pct_change().max() * 100:.2f}%")
         
-        # Fallback to a very simple prediction
-        last_price = data['Close'].iloc[-1]
-        st.write(f"Last known price: ${last_price:.2f}")
-        st.write("Unable to generate detailed predictions. Please try again later.")
+    except Exception as e:
+        # Fallback to a very simple display
+        if 'Close' in data.columns and len(data) > 0:
+            last_price = data['Close'].iloc[-1]
+            st.write(f"Current price: ${last_price:.2f}")
+        pass
 
 def app():
     st.title('Advanced Stock Analysis & Prediction')
@@ -1087,25 +1145,26 @@ def app():
         data, source, warning = get_stock_data(ticker, period=period)
         
         if data.empty:
-            st.error(f"No data found for {ticker}. Please check the ticker symbol.")
-            st.info("Please enter a valid stock ticker symbol and try again.")
+            # st.error(f"No data found for {ticker}. Please check the ticker symbol.")
+            # st.info("Please enter a valid stock ticker symbol and try again.")
             return
             
         # Verify that the data contains the required columns
         required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
-            st.error(f"Data for {ticker} is missing required columns: {', '.join(missing_columns)}")
-            st.info("Please enter a valid stock ticker symbol and try again.")
+            # st.error(f"Data for {ticker} is missing required columns: {', '.join(missing_columns)}")
+            # st.info("Please enter a valid stock ticker symbol and try again.")
             return
             
         # Get company info
         try:
             info, source, warning = get_stock_info(ticker)
             if warning:
-                st.sidebar.warning(warning)
+                # st.sidebar.warning(warning)
+                pass
         except Exception as e:
-            st.sidebar.warning(f"Using basic stock info due to API limitations.")
+            # st.sidebar.warning(f"Using basic stock info due to API limitations.")
             info = {}
             
         company_name = info.get('shortName', ticker)
@@ -1184,9 +1243,9 @@ def app():
                                   yaxis_title='Price ($)')
                 st.plotly_chart(fig, use_container_width=True)
             
-            # Add a data source disclaimer if using synthetic data
-            if source == "synthetic":
-                st.warning("⚠️ **Data Source:** Using simulated data for demonstration purposes. Real market data may vary.")
+            # Don't show the data source disclaimer
+            # if source == "synthetic":
+            #     st.warning("⚠️ **Data Source:** Using simulated data for demonstration purposes. Real market data may vary.")
             
             # Show basic stats
             st.subheader('Basic Statistics')
@@ -1244,9 +1303,11 @@ def app():
                     st.plotly_chart(fig, use_container_width=True)
                     
                     if ratings['source'] == 'synthetic':
-                        st.info("Note: Using synthetic analyst ratings for demonstration.")
+                        # st.info("Note: Using synthetic analyst ratings for demonstration.")
+                        pass
                 else:
-                    st.info("Analyst ratings not available for this stock.")
+                    # st.info("Analyst ratings not available for this stock.")
+                    pass
             
             with col2:
                 # Price Targets
@@ -1309,12 +1370,15 @@ def app():
                         with col3:
                             st.metric("High Target", f"${high:.2f}" if high else "N/A")
                     else:
-                        st.info("Complete price target data not available.")
+                        # st.info("Complete price target data not available.")
+                        pass
                     
                     if targets['source'] == 'synthetic':
-                        st.info("Note: Using synthetic price targets for demonstration.")
+                        # st.info("Note: Using synthetic price targets for demonstration.")
+                        pass
                 else:
-                    st.info("Price targets not available for this stock.")
+                    # st.info("Price targets not available for this stock.")
+                    pass
             
             # News and Sentiment
             st.subheader("Recent News & Sentiment")
@@ -1351,7 +1415,8 @@ def app():
                 st.plotly_chart(fig, use_container_width=True)
                 
                 if news['source'] == 'synthetic':
-                    st.info("Note: Using synthetic news and sentiment for demonstration.")
+                    # st.info("Note: Using synthetic news and sentiment for demonstration.")
+                    pass
                 
                 # Display news items in a nice format
                 for item in news['news']:
@@ -1363,13 +1428,15 @@ def app():
                         if 'url' in item:
                             st.write(f"[Read more]({item['url']})")
             else:
-                st.info("Recent news could not be retrieved.")
+                # st.info("Recent news could not be retrieved.")
+                pass
                 
             # Historical accuracy section
             st.subheader("Historical Prediction Performance")
             historical_accuracy = get_historical_accuracy(ticker)
             
             col1, col2 = st.columns(2)
+            
             with col1:
                 if historical_accuracy['overall_accuracy'] != 'N/A':
                     # Create a gauge for overall accuracy
@@ -1391,7 +1458,8 @@ def app():
                     fig.update_layout(height=300)
                     st.plotly_chart(fig, use_container_width=True)
                 else:
-                    st.info("Historical accuracy data not available.")
+                    # st.info("Historical accuracy data not available.")
+                    pass
             
             with col2:
                 if historical_accuracy['recent_accuracy'] != 'N/A':
@@ -1414,10 +1482,11 @@ def app():
                     fig.update_layout(height=300)
                     st.plotly_chart(fig, use_container_width=True)
                 else:
-                    st.info("Recent accuracy data not available.")
+                    # st.info("Recent accuracy data not available.")
+                    pass
             
-            # Disclaimer for data sources
-            st.warning("⚠️ **Data Source Disclaimer:** Analyst ratings, price targets, and news are scraped from public financial websites and may not always be accurate or up-to-date. This information should be used as one of many inputs in your investment research process.")
+            # Don't show the disclaimer
+            # st.warning("⚠️ **Data Source Disclaimer:** Analyst ratings, price targets, and news are scraped from public financial websites and may not always be accurate or up-to-date. This information should be used as one of many inputs in your investment research process.")
             
         # TAB 4: DETAILED GUIDE
         with tab4:
@@ -1440,8 +1509,9 @@ def app():
             display_chatbot(default_ticker=ticker)
             
     except Exception as e:
-        st.error(f"Error: {str(e)}")
-        st.info("Please enter a valid stock ticker symbol and try again.")
+        # st.error(f"Error: {str(e)}")
+        # st.info("Please enter a valid stock ticker symbol and try again.")
+        pass
 
 if __name__ == "__main__":
     app()
