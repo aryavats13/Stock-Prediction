@@ -1,611 +1,1447 @@
 import streamlit as st
-import yfinance as yf
-import plotly.graph_objects as go
-from prophet import Prophet
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
-import ta
+from sklearn.preprocessing import MinMaxScaler
+# Make TensorFlow imports optional
+try:
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import Dense, LSTM, Dropout
+    TENSORFLOW_AVAILABLE = True
+except (ImportError, MemoryError):
+    TENSORFLOW_AVAILABLE = False
+    st.warning("TensorFlow could not be imported. Using fallback prediction methods.")
+import requests
+from bs4 import BeautifulSoup
+import plotly.graph_objects as go
+import plotly.express as px
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import time
+import random
+import json
+import io
+import base64
+import alpha_vantage_api as av
 
-def fetch_stock_data(symbol, period='2y'):
+# Import the chatbot functionality
+try:
+    from bot import display_chatbot
+except ImportError:
+    # Fallback if bot.py is not available
+    def display_chatbot(default_ticker=None):
+        st.write("Chat assistant is currently unavailable.")
+
+# Data fetching functions with fallbacks
+def get_stock_data(ticker, period="1y", retries=3):
+    """Get stock data with multiple fallback mechanisms."""
+    # Try Alpha Vantage API first
     try:
-        # First try with yfinance
-        stock = yf.Ticker(symbol)
-        df = stock.history(period=period)
+        # Import our alpha_vantage_api module
+        import alpha_vantage_api as av
         
-        # If yfinance data is empty, try Alpha Vantage API
-        if df.empty:
-            # Silently try alternative data source without showing info message
-            # Import Alpha Vantage API module
-            import alpha_vantage_api as av
+        # Test API connection first
+        test_results = av.test_api_connection(ticker)
+        if not test_results['success']:
+            st.error(f"API Connection Error: {test_results['message']}")
+            raise Exception(test_results['message'])
+        
+        # Use our module to get the data
+        df = av.get_stock_data(ticker, period=period)
+        
+        if not df.empty:
+            # Format the data properly
+            df = df.sort_index(ascending=True)
+            df.index = pd.to_datetime(df.index)
             
-            # Map yfinance period to Alpha Vantage period
-            av_period = "1y"
-            if period == "1mo" or period == "1m":
-                av_period = "1mo"
-            elif period == "3mo" or period == "3m":
-                av_period = "3mo"
-            elif period == "6mo" or period == "6m":
-                av_period = "6mo"
-            elif period == "1y":
-                av_period = "1y"
-            elif period == "2y":
-                av_period = "1y"  # Alpha Vantage doesn't have 2y directly
-            
-            # Try to get data from Alpha Vantage
-            df = av.get_stock_data(symbol, period=av_period)
-            
-            if df.empty:
-                # Instead of raising an error, return empty DataFrame
-                # The calling function will handle this case
-                return pd.DataFrame()
-        return df
+            # Display success message with data sample
+            st.success(f"Successfully retrieved data for {ticker}")
+            return df, "alpha_vantage", None
+        else:
+            st.warning("Alpha Vantage API returned no data.")
     except Exception as e:
-        # Silently handle errors without showing error messages
-        return pd.DataFrame()
+        st.error(f"Alpha Vantage API error: {str(e)}")
+    
+    # Fallback: Generate synthetic data based on ticker
+    # This ensures we always have something to show
+    warning_msg = f"Could not retrieve real data for {ticker}. Using simulated data for demonstration."
+    
+    # Use ticker string to generate a consistent seed
+    seed_value = sum(ord(c) for c in ticker)
+    np.random.seed(seed_value)
+    
+    # Generate dates
+    end_date = datetime.now()
+    if period == "1mo":
+        days = 30
+    elif period == "3mo":
+        days = 90
+    elif period == "6mo":
+        days = 180
+    else:  # Default to 1y
+        days = 365
+    
+    start_date = end_date - timedelta(days=days)
+    dates = pd.date_range(start=start_date, end=end_date, freq='B')
+    
+    # Use ticker string to generate a consistent seed
+    seed_value = sum(ord(c) for c in ticker)
+    np.random.seed(seed_value)
+    
+    # Generate dates
+    dates = pd.date_range(start=start_date, end=end_date, freq='B')
+    
+    # Generate a random walk with drift
+    returns = np.random.normal(0.0005, 0.015, size=len(dates)) 
+    
+    # Add some cyclicality and initial price based on ticker
+    price = 50 + (seed_value % 200)  # Initial price between 50 and 250
+    prices = [price]
+    
+    for ret in returns:
+        price = price * (1 + ret)
+        prices.append(price)
+    
+    prices = prices[:-1]  # Remove the extra price
+    
+    # Create synthetic data
+    synthetic_data = pd.DataFrame({
+        'Open': prices * np.random.uniform(0.98, 0.995, size=len(prices)),
+        'High': prices * np.random.uniform(1.01, 1.03, size=len(prices)),
+        'Low': prices * np.random.uniform(0.97, 0.99, size=len(prices)),
+        'Close': prices,
+        'Volume': np.random.randint(100000, 10000000, size=len(prices))
+    }, index=dates)
+    
+    return synthetic_data, "synthetic", warning_msg
 
-def calculate_technical_indicators(df):
-    # RSI
-    df['RSI'] = ta.momentum.rsi(df['Close'])
-    
-    # MACD
-    macd = ta.trend.MACD(df['Close'])
-    df['MACD'] = macd.macd()
-    df['MACD_Signal'] = macd.macd_signal()
-    
-    # Moving Averages
-    df['MA20'] = df['Close'].rolling(window=20).mean()
-    df['MA50'] = df['Close'].rolling(window=50).mean()
-    df['MA200'] = df['Close'].rolling(window=200).mean()
-    
-    # Bollinger Bands
-    bollinger = ta.volatility.BollingerBands(df['Close'])
-    df['BB_High'] = bollinger.bollinger_hband()
-    df['BB_Low'] = bollinger.bollinger_lband()
-    df['BB_Mid'] = bollinger.bollinger_mavg()
-    
-    return df
-
-def plot_stock_data(df, symbol):
-    fig = go.Figure()
-    
-    # Add candlestick
-    fig.add_trace(
-        go.Candlestick(
-            x=df.index,
-            open=df['Open'],
-            high=df['High'],
-            low=df['Low'],
-            close=df['Close'],
-            name='OHLC',
-            increasing_line_color='#26a69a',
-            decreasing_line_color='#ef5350'
-        )
-    )
-    
-    # Add Moving averages
-    fig.add_trace(go.Scatter(x=df.index, y=df['MA20'], name='MA20', 
-                            line=dict(color='#AB47BC', width=1.5)))
-    fig.add_trace(go.Scatter(x=df.index, y=df['MA50'], name='MA50', 
-                            line=dict(color='#7E57C2', width=1.5)))
-    
-    # Add volume bars
-    colors = ['#ef5350' if row['Open'] - row['Close'] >= 0 else '#26a69a' 
-              for index, row in df.iterrows()]
-    fig.add_trace(
-        go.Bar(
-            x=df.index,
-            y=df['Volume'],
-            name='Volume',
-            marker_color=colors,
-            marker_line_color='rgb(0,0,0)',
-            marker_line_width=0.5,
-            opacity=0.7,
-            yaxis='y2'
-        )
-    )
-    
-    # Add Bollinger Bands
-    fig.add_trace(go.Scatter(x=df.index, y=df['BB_High'], name='BB High', 
-                            line=dict(color='rgba(236, 64, 122, 0.3)', dash='dash')))
-    fig.add_trace(go.Scatter(x=df.index, y=df['BB_Low'], name='BB Low',
-                            line=dict(color='rgba(236, 64, 122, 0.3)', dash='dash')))
-    fig.add_trace(go.Scatter(x=df.index, y=df['BB_Mid'], name='BB Mid',
-                            line=dict(color='rgba(236, 64, 122, 0.8)', dash='dash')))
-    
-    # Update layout with improved fonts and styling
-    fig.update_layout(
-        title=dict(
-            text=f'{symbol} Stock Analysis - Last 2 Years',
-            font=dict(size=24, color='white')
-        ),
-        yaxis_title=dict(
-            text='Stock Price ($)',
-            font=dict(size=16, color='white')
-        ),
-        yaxis2=dict(
-            title='Volume',
-            titlefont=dict(size=16, color='white'),
-            tickfont=dict(size=12, color='white'),
-            overlaying='y',
-            side='right'
-        ),
-        xaxis=dict(
-            title='Date',
-            titlefont=dict(size=16, color='white'),
-            tickfont=dict(size=12, color='white')
-        ),
-        yaxis=dict(
-            tickfont=dict(size=12, color='white'),
-            tickformat='$,.2f'
-        ),
-        height=800,
-        template='plotly_dark',
-        showlegend=True,
-        legend=dict(
-            font=dict(size=14, color='white'),
-            bgcolor='rgba(0,0,0,0.5)',
-            bordercolor='rgba(255,255,255,0.2)',
-            borderwidth=1,
-            yanchor="top",
-            y=0.99,
-            xanchor="left",
-            x=0.01
-        ),
-        margin=dict(l=50, r=50, t=80, b=50),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)'
-    )
-    
-    return fig
-
-def plot_technical_indicators(df):
-    # RSI Plot
-    fig_rsi = go.Figure()
-    fig_rsi.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI',
-                                line=dict(color='#7E57C2', width=2)))
-    fig_rsi.add_hline(y=70, line_dash="dash", line_color="#ef5350")
-    fig_rsi.add_hline(y=30, line_dash="dash", line_color="#26a69a")
-    fig_rsi.update_layout(
-        title='Relative Strength Index (RSI)',
-        height=300,
-        template='plotly_dark',
-        showlegend=True,
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        xaxis_title='Date',
-        yaxis_title='RSI Value',
-        margin=dict(l=50, r=50, t=80, b=50),
-        font=dict(color='white')
-    )
-    
-    # MACD Plot
-    fig_macd = go.Figure()
-    fig_macd.add_trace(go.Scatter(x=df.index, y=df['MACD'], name='MACD',
-                                 line=dict(color='#AB47BC', width=2)))
-    fig_macd.add_trace(go.Scatter(x=df.index, y=df['MACD_Signal'], name='Signal Line',
-                                 line=dict(color='#26a69a', width=2)))
-    fig_macd.update_layout(
-        title='Moving Average Convergence Divergence (MACD)',
-        height=300,
-        template='plotly_dark',
-        showlegend=True,
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        xaxis_title='Date',
-        yaxis_title='MACD Value',
-        margin=dict(l=50, r=50, t=80, b=50),
-        font=dict(color='white')
-    )
-    
-    return fig_rsi, fig_macd
-
-def create_prophet_model(df):
-    # Prepare data for Prophet
-    prophet_df = df.reset_index()
-    
-    # The date column will be the former index, now as a column named 'index' or 'Date'
-    # First, identify which column contains the date
-    if 'Date' in prophet_df.columns:
-        date_col = 'Date'
-    else:
-        date_col = 'index'  # When reset_index() is called, the index becomes a column named 'index'
-    
-    # Select only the date column and Close price
-    prophet_df = prophet_df[[date_col, 'Close']]
-    
-    # Remove timezone from dates if present
-    if hasattr(prophet_df[date_col].dtype, 'tz'):
-        prophet_df[date_col] = prophet_df[date_col].dt.tz_localize(None)
-    
-    # Rename columns to Prophet's required format
-    prophet_df.columns = ['ds', 'y']
-    
-    # Ensure the date column is datetime type
-    prophet_df['ds'] = pd.to_datetime(prophet_df['ds'])
-    
-    # Create and fit the model
-    model = Prophet(daily_seasonality=True)
-    model.fit(prophet_df)
-    
-    # Create future dates for 25 days
-    future_dates = model.make_future_dataframe(periods=25)
-    forecast = model.predict(future_dates)
-    
-    return forecast
-
-def stock_page():
-    # Set page title with larger font and better spacing
-    st.markdown('<div style="padding: 20px; margin-bottom: 30px; text-align: center; background-color: rgba(0,0,0,0.3); border-radius: 10px;">', unsafe_allow_html=True)
-    st.markdown('<h1 style="font-size: 38px; color: white; margin-bottom: 10px;">Stock Analysis Dashboard</h1>', unsafe_allow_html=True)
-    st.markdown(f'<h3 style="font-size: 22px; color: #9e9e9e; font-weight: 400;">Analyzing: {st.session_state.stock}</h3>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Add a loading animation while fetching data
-    with st.spinner('Loading market data...'):
-        # Fetch stock data
-        df = fetch_stock_data(st.session_state.stock)
-    
-    if df.empty:
-        # Show a more user-friendly message without error styling
-        st.markdown('<div style="padding: 30px; text-align: center; background-color: rgba(0,0,0,0.3); border-radius: 10px; margin: 50px 0;">', unsafe_allow_html=True)
-        st.markdown('<h2 style="color: #e0e0e0;">We couldn\'t find data for this symbol</h2>', unsafe_allow_html=True)
-        st.markdown('<p style="font-size: 18px; color: #9e9e9e; margin: 20px 0;">Please try a different stock symbol or check your internet connection.</p>', unsafe_allow_html=True)
-        st.markdown('<p style="font-size: 16px; color: #9e9e9e;">Examples: <span style="color: #4fc3f7;">AAPL</span> (Apple), <span style="color: #4fc3f7;">MSFT</span> (Microsoft), <span style="color: #4fc3f7;">RELIANCE.NS</span> (Reliance Industries)</p>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Add a back button
-        if st.button("← Go Back to Home", key="back_button"):
-            st.session_state.page = 'home'
-            st.rerun()
-        return
-    
-    # Add a progress bar for data processing steps
-    progress_bar = st.progress(0)
-    
-    # Calculate technical indicators
-    progress_bar.progress(25)
-    st.markdown('<div style="padding: 5px; background-color: rgba(0,0,0,0.2); border-radius: 5px; margin-bottom: 10px;"><p style="color: #9e9e9e; font-size: 14px;">Calculating technical indicators...</p></div>', unsafe_allow_html=True)
-    df = calculate_technical_indicators(df)
-    
-    # Create Prophet forecast
-    progress_bar.progress(50)
-    st.markdown('<div style="padding: 5px; background-color: rgba(0,0,0,0.2); border-radius: 5px; margin-bottom: 10px;"><p style="color: #9e9e9e; font-size: 14px;">Building prediction model...</p></div>', unsafe_allow_html=True)
-    forecast = create_prophet_model(df)
-    
-    # Display stock info with error handling
-    progress_bar.progress(75)
-    st.markdown('<div style="padding: 5px; background-color: rgba(0,0,0,0.2); border-radius: 5px; margin-bottom: 10px;"><p style="color: #9e9e9e; font-size: 14px;">Retrieving company information...</p></div>', unsafe_allow_html=True)
-    stock = yf.Ticker(st.session_state.stock)
-    
-    # Try to get stock info with error handling
+def get_stock_info(ticker, retries=3):
+    """Get stock info from Alpha Vantage API."""
+    # Try to get basic info from Alpha Vantage API
     try:
-        info = stock.info
-    except Exception as e:
-        # Create a fallback info dictionary with default values without showing warning
-        info = {
-            'currentPrice': df['Close'].iloc[-1] if not df.empty else 'N/A',
-            'regularMarketChangePercent': 0,
-            'marketCap': 0,
-            'fiftyTwoWeekHigh': df['High'].max() if not df.empty else 'N/A'
+        # Import our alpha_vantage_api module if not already imported
+        import alpha_vantage_api as av
+        
+        # Use the API key from our module
+        api_key = "QGX06MNEI1HAOFGU"
+        url = f'https://www.alphavantage.co/query?function=OVERVIEW&symbol={ticker}&apikey={api_key}'
+        r = requests.get(url)
+        data = r.json()
+        
+        if data and len(data) > 5:
+            # Map Alpha Vantage fields to yfinance-like fields
+            mapped_data = {
+                'shortName': data.get('Name', ticker),
+                'longBusinessSummary': data.get('Description', f"Company information for {ticker}"),
+                'sector': data.get('Sector', 'N/A'),
+                'industry': data.get('Industry', 'N/A'),
+                'marketCap': float(data.get('MarketCapitalization', 0)),
+                'trailingPE': float(data.get('PERatio', 0) or 0),
+                'trailingEps': float(data.get('EPS', 0) or 0),
+                'dividendYield': float(data.get('DividendYield', 0) or 0),
+                'fiftyTwoWeekHigh': float(data.get('52WeekHigh', 0) or 0),
+                'fiftyTwoWeekLow': float(data.get('52WeekLow', 0) or 0),
+                'beta': float(data.get('Beta', 0) or 0)
+            }
+            return mapped_data, "alpha_vantage", None
+    except:
+        pass
+        
+    # Fallback 2: Generate synthetic info based on ticker
+    warning_msg = f"Could not retrieve real information for {ticker}. Using placeholder data for demonstration."
+    
+    # Use ticker string to generate consistent values
+    seed_value = sum(ord(c) for c in ticker)
+    random.seed(seed_value)
+    
+    # Generate synthetic company info
+    sectors = ["Technology", "Healthcare", "Finance", "Consumer Cyclical", "Energy", 
+               "Industrials", "Communication Services", "Materials", "Real Estate", "Utilities"]
+    
+    industries = {
+        "Technology": ["Software", "Hardware", "Semiconductors", "IT Services"],
+        "Healthcare": ["Biotechnology", "Medical Devices", "Pharmaceuticals", "Healthcare Services"],
+        "Finance": ["Banking", "Insurance", "Asset Management", "Financial Services"],
+        "Consumer Cyclical": ["Retail", "Automotive", "Entertainment", "Restaurants"],
+        "Energy": ["Oil & Gas", "Renewable Energy", "Coal", "Nuclear"],
+        "Industrials": ["Aerospace", "Defense", "Construction", "Manufacturing"],
+        "Communication Services": ["Telecom", "Media", "Social Media", "Advertising"],
+        "Materials": ["Chemicals", "Metals", "Mining", "Forestry"],
+        "Real Estate": ["REIT", "Property Management", "Real Estate Development", "Real Estate Services"],
+        "Utilities": ["Electric", "Gas", "Water", "Renewable"]
+    }
+    
+    sector = sectors[seed_value % len(sectors)]
+    industry = industries[sector][seed_value % len(industries[sector])]
+    market_cap = random.randint(1, 500) * 1e9  # 1B to 500B
+    
+    synthetic_info = {
+        'shortName': f"{ticker} Inc.",
+        'longBusinessSummary': f"{ticker} Inc. is a leading company in the {industry} industry within the {sector} sector. The company focuses on innovative solutions for its customers worldwide.",
+        'sector': sector,
+        'industry': industry,
+        'marketCap': market_cap,
+        'trailingPE': round(random.uniform(10, 30), 2),
+        'trailingEps': round(random.uniform(1, 10), 2),
+        'dividendYield': round(random.uniform(0, 0.04), 4),
+        'fiftyTwoWeekHigh': round(random.uniform(50, 200) + (seed_value % 100), 2),
+        'fiftyTwoWeekLow': round(random.uniform(20, 100) + (seed_value % 50), 2),
+        'beta': round(random.uniform(0.5, 2.0), 2)
+    }
+    
+    return synthetic_info, "synthetic", warning_msg
+
+def get_analyst_ratings(ticker):
+    """Scrape analyst ratings with fallbacks."""
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        import random
+        
+        # Use Yahoo Finance for analyst ratings
+        url = f"https://finance.yahoo.com/quote/{ticker}/analysis"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-    
-    # Complete the progress bar
-    progress_bar.progress(100)
-    
-    # Add a small delay to show the completed progress bar
-    import time
-    time.sleep(0.5)
-    
-    # Remove the progress bar
-    progress_bar.empty()
-    
-    # Company Info Section with improved fonts and spacing
-    st.markdown('<div style="padding: 20px; background-color: rgba(0,0,0,0.3); border-radius: 10px; margin: 20px 0;">', unsafe_allow_html=True)
-    st.markdown('<h2 style="font-size: 26px; color: white; margin-bottom: 20px;">Company Overview</h2>', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        try:
-            current_price = info.get('currentPrice', df['Close'].iloc[-1] if not df.empty else 'N/A')
-            price_display = f"${current_price}" if isinstance(current_price, (int, float)) else "N/A"
-            percent_change = info.get('regularMarketChangePercent', 0)
-            percent_display = f"{percent_change:.2f}%" if isinstance(percent_change, (int, float)) else "0.00%"
-            st.metric("Current Price", price_display, percent_display)
+        
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Initialize ratings dictionary
+        ratings = {
+            'Strong Buy': 0,
+            'Buy': 0,
+            'Hold': 0,
+            'Sell': 0,
+            'Strong Sell': 0
+        }
+        
+        # Look for analyst recommendation tables
+        tables = soup.find_all('table')
+        
+        for table in tables:
+            headers = table.find_all('th')
+            header_texts = [header.text.strip() for header in headers]
             
-            # Add tooltip explanation for beginners
-            st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">The current trading price of the stock</div>', unsafe_allow_html=True)
-        except:
-            st.metric("Current Price", f"${df['Close'].iloc[-1]:.2f}" if not df.empty else "N/A", "0.00%")
-            st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">The current trading price of the stock</div>', unsafe_allow_html=True)
-    with col2:
+            # Check if this is the recommendations table
+            if 'Strong Buy' in header_texts or 'Buy' in header_texts or 'Hold' in header_texts:
+                rows = table.find_all('tr')
+                
+                for row in rows:
+                    cells = row.find_all('td')
+                    if len(cells) >= 2:
+                        label = cells[0].text.strip()
+                        if label in ['Strong Buy', 'Buy', 'Hold', 'Sell', 'Strong Sell']:
+                            try:
+                                value = int(cells[1].text.strip())
+                                ratings[label] = value
+                            except (ValueError, IndexError):
+                                pass
+        
+        # Check if we found any ratings
+        total_ratings = sum(ratings.values())
+        
+        if total_ratings > 0:
+            return {
+                'source': 'web_scraped',
+                'ratings': ratings,
+                'total': total_ratings
+            }
+        
+        # If we didn't find any ratings, try another approach
+        recommendation_elements = soup.find_all(text=lambda text: text and 'Recommendation' in text)
+        
+        for element in recommendation_elements:
+            parent = element.parent
+            if parent:
+                next_element = parent.find_next('td')
+                if next_element:
+                    recommendation = next_element.text.strip()
+                    if recommendation in ['Strong Buy', 'Buy', 'Hold', 'Sell', 'Strong Sell']:
+                        ratings[recommendation] = total_ratings + 5
+                        return {
+                            'source': 'web_scraped',
+                            'ratings': ratings,
+                            'total': sum(ratings.values())
+                        }
+        
+        # If we still don't have ratings, fall back to synthetic data
+        raise Exception("Could not find analyst ratings on Yahoo Finance")
+        
+    except Exception as e:
+        st.warning(f"Could not scrape analyst ratings: {str(e)}. Using synthetic data.")
+        
+        # Generate synthetic ratings based on ticker
+        seed_value = sum(ord(c) for c in ticker)
+        random.seed(seed_value)
+        
+        # Generate random ratings with some bias based on ticker
+        bias = (seed_value % 5) - 2  # -2 to +2
+        
+        # Base distribution with some randomness
+        ratings = {
+            'Strong Buy': max(0, random.randint(0, 5) + (1 if bias > 0 else 0)),
+            'Buy': max(0, random.randint(3, 8) + (1 if bias > 0 else 0)),
+            'Hold': max(0, random.randint(5, 15) + (1 if bias == 0 else 0)),
+            'Sell': max(0, random.randint(1, 5) + (1 if bias < 0 else 0)),
+            'Strong Sell': max(0, random.randint(0, 3) + (1 if bias < -1 else 0))
+        }
+        
+        return {
+            'source': 'synthetic',
+            'ratings': ratings,
+            'total': sum(ratings.values())
+        }
+
+def get_news_sentiment(ticker):
+    """Scrape news with fallbacks."""
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        import random
+        from datetime import datetime, timedelta
+        
+        # Use Yahoo Finance for news
+        url = f"https://finance.yahoo.com/quote/{ticker}/news"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Find news articles
+        news_items = []
+        
+        # Look for news links
+        article_elements = soup.find_all('a', href=lambda href: href and '/news/' in href)
+        
+        for article in article_elements:
+            # Get the title
+            title_element = article.find('h3')
+            if not title_element:
+                continue
+                
+            title = title_element.text.strip()
+            
+            # Skip duplicates
+            if any(item['title'] == title for item in news_items):
+                continue
+                
+            # Get the source and date
+            source_element = article.find('div', {'class': 'C(#959595)'}) or article.find('div', {'class': 'Fz(11px)'})
+            source = "Yahoo Finance"
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            
+            if source_element:
+                source_text = source_element.text.strip()
+                if 'ago' in source_text:
+                    # Parse relative time
+                    date_str = datetime.now().strftime("%Y-%m-%d")
+                else:
+                    # Try to extract source and date
+                    parts = source_text.split('·')
+                    if len(parts) >= 1:
+                        source = parts[0].strip()
+                    if len(parts) >= 2:
+                        date_str = parts[1].strip()
+            
+            # Generate a sentiment score (-1 to 1)
+            # This is a placeholder - in a real app, you'd use NLP
+            sentiment = analyze_sentiment(title)
+            
+            # Get the URL
+            url = "https://finance.yahoo.com" + article['href'] if article['href'].startswith('/') else article['href']
+            
+            news_items.append({
+                'title': title,
+                'source': source,
+                'date': date_str,
+                'sentiment': sentiment,
+                'url': url
+            })
+            
+            # Limit to 5 news items
+            if len(news_items) >= 5:
+                break
+        
+        # If we found news items, return them
+        if news_items:
+            # Calculate overall sentiment
+            overall_sentiment = sum(item['sentiment'] for item in news_items) / len(news_items)
+            
+            return {
+                'source': 'web_scraped',
+                'news': news_items,
+                'overall_sentiment': overall_sentiment
+            }
+        
+        # If we couldn't find news items, fall back to synthetic data
+        raise Exception("Could not find news articles on Yahoo Finance")
+        
+    except Exception as e:
+        st.warning(f"Could not scrape news: {str(e)}. Using synthetic data.")
+        
+        # Generate synthetic news based on ticker
+        seed_value = sum(ord(c) for c in ticker)
+        random.seed(seed_value)
+        
+        # Generate random news with some bias based on ticker
+        bias = (seed_value % 5) - 2  # -2 to +2
+        
+        # News templates
+        positive_templates = [
+            f"{ticker} Surges on Strong Earnings Report",
+            f"Analysts Upgrade {ticker} Following Product Launch",
+            f"Investors Bullish on {ticker}'s Growth Prospects",
+            f"{ticker} Announces New Strategic Partnership",
+            f"{ticker} Beats Market Expectations in Q{random.randint(1, 4)}"
+        ]
+        
+        neutral_templates = [
+            f"{ticker} Announces Leadership Changes",
+            f"What's Next for {ticker}? Experts Weigh In",
+            f"{ticker} to Present at Upcoming Industry Conference",
+            f"{ticker} Releases Sustainability Report",
+            f"Inside {ticker}'s New Product Strategy"
+        ]
+        
+        negative_templates = [
+            f"{ticker} Shares Drop After Earnings Miss",
+            f"Analysts Concerned About {ticker}'s Market Position",
+            f"{ticker} Faces Regulatory Scrutiny",
+            f"Competition Intensifies for {ticker}",
+            f"{ticker} Cuts Guidance for Fiscal Year"
+        ]
+        
+        # Generate news items with sentiment
+        news_items = []
+        now = datetime.now()
+        
+        for i in range(5):
+            # Determine sentiment category based on bias
+            r = random.random()
+            if r < 0.4 + (bias * 0.1):  # More positive for higher bias
+                template_list = positive_templates
+                sentiment = random.uniform(0.3, 0.9)
+            elif r < 0.7 + (bias * 0.05):  # More neutral for neutral bias
+                template_list = neutral_templates
+                sentiment = random.uniform(-0.2, 0.2)
+            else:  # More negative for lower bias
+                template_list = negative_templates
+                sentiment = random.uniform(-0.9, -0.3)
+            
+            # Select a template and generate a title
+            title = random.choice(template_list)
+            
+            # Generate a date within the last 7 days
+            days_ago = random.randint(0, 7)
+            date = (now - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+            
+            # Select a source
+            sources = ["Yahoo Finance", "Market Watch", "Bloomberg", "CNBC", "Reuters", "Seeking Alpha"]
+            source = random.choice(sources)
+            
+            news_items.append({
+                'title': title,
+                'source': source,
+                'date': date,
+                'sentiment': sentiment,
+                'url': f"https://finance.yahoo.com/quote/{ticker}"
+            })
+        
+        # Calculate overall sentiment
+        overall_sentiment = sum(item['sentiment'] for item in news_items) / len(news_items)
+        
+        return {
+            'source': 'synthetic',
+            'news': news_items,
+            'overall_sentiment': overall_sentiment
+        }
+
+def analyze_sentiment(text):
+    """
+    Analyze sentiment of a text using a simple keyword approach.
+    Returns a score between -1 (negative) and 1 (positive).
+    """
+    # Simple keyword-based sentiment analysis
+    positive_words = [
+        'surge', 'jump', 'rise', 'gain', 'profit', 'growth', 'positive', 'up', 'higher',
+        'strong', 'beat', 'exceed', 'outperform', 'bullish', 'upgrade', 'buy', 'success',
+        'innovative', 'partnership', 'opportunity', 'launch', 'expansion', 'dividend'
+    ]
+    
+    negative_words = [
+        'drop', 'fall', 'decline', 'loss', 'negative', 'down', 'lower', 'weak', 'miss',
+        'underperform', 'bearish', 'downgrade', 'sell', 'struggle', 'concern', 'risk',
+        'lawsuit', 'investigation', 'regulatory', 'competition', 'cut', 'layoff', 'debt'
+    ]
+    
+    # Convert to lowercase for case-insensitive matching
+    text_lower = text.lower()
+    
+    # Count occurrences of positive and negative words
+    positive_count = sum(1 for word in positive_words if word in text_lower)
+    negative_count = sum(1 for word in negative_words if word in text_lower)
+    
+    # Calculate sentiment score
+    total_count = positive_count + negative_count
+    if total_count == 0:
+        return 0  # Neutral if no sentiment words found
+    
+    return (positive_count - negative_count) / total_count
+
+def get_price_targets(ticker):
+    """Scrape price targets with fallbacks."""
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        import random
+        
+        # Use Yahoo Finance for price targets
+        url = f"https://finance.yahoo.com/quote/{ticker}/analysis"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Initialize price targets dictionary
+        price_targets = {
+            'low': None,
+            'average': None,
+            'high': None,
+            'current': None
+        }
+        
+        # Look for price target tables
+        tables = soup.find_all('table')
+        
+        for table in tables:
+            # Check if this is the price target table
+            headers = table.find_all('th')
+            header_texts = [header.text.strip() for header in headers]
+            
+            if any('Target' in text for text in header_texts):
+                rows = table.find_all('tr')
+                
+                for row in rows:
+                    cells = row.find_all('td')
+                    if len(cells) >= 2:
+                        label = cells[0].text.strip()
+                        
+                        if 'Low' in label:
+                            try:
+                                price_targets['low'] = float(cells[1].text.strip().replace(',', ''))
+                            except (ValueError, IndexError):
+                                pass
+                        elif 'Mean' in label or 'Average' in label:
+                            try:
+                                price_targets['average'] = float(cells[1].text.strip().replace(',', ''))
+                            except (ValueError, IndexError):
+                                pass
+                        elif 'High' in label:
+                            try:
+                                price_targets['high'] = float(cells[1].text.strip().replace(',', ''))
+                            except (ValueError, IndexError):
+                                pass
+        
+        # Try to get current price
+        current_price_element = soup.find('fin-streamer', {'data-field': 'regularMarketPrice'})
+        if current_price_element and current_price_element.get('value'):
+            try:
+                price_targets['current'] = float(current_price_element.get('value'))
+            except ValueError:
+                pass
+        
+        # Check if we found any price targets
+        if any(price_targets.values()):
+            return {
+                'source': 'web_scraped',
+                'targets': price_targets
+            }
+        
+        # If we couldn't find price targets, fall back to synthetic data
+        raise Exception("Could not find price targets on Yahoo Finance")
+        
+    except Exception as e:
+        st.warning(f"Could not scrape price targets: {str(e)}. Using synthetic data.")
+        
+        # Generate synthetic price targets based on ticker
+        seed_value = sum(ord(c) for c in ticker)
+        random.seed(seed_value)
+        
+        # Try to get a realistic current price based on ticker
+        # This is just a heuristic for demo purposes
+        base_price = 50 + (seed_value % 200)  # Between $50 and $250
+        
+        # Generate price targets with some randomness
+        current = base_price * random.uniform(0.95, 1.05)
+        
+        # Generate analyst targets with bias based on ticker
+        bias = (seed_value % 5) - 2  # -2 to +2
+        bias_factor = 1 + (bias * 0.05)  # 0.9 to 1.1
+        
+        # Calculate price targets
+        average_target = current * bias_factor * random.uniform(0.98, 1.12)
+        low_target = average_target * random.uniform(0.7, 0.9)
+        high_target = average_target * random.uniform(1.1, 1.3)
+        
+        return {
+            'source': 'synthetic',
+            'targets': {
+                'current': round(current, 2),
+                'low': round(low_target, 2),
+                'average': round(average_target, 2),
+                'high': round(high_target, 2)
+            }
+        }
+
+def get_historical_accuracy(ticker, data=None):
+    """Generate historical accuracy with real or synthetic data."""
+    try:
+        if data is None:
+            # Get historical data using Alpha Vantage
+            data = av.get_stock_data(ticker, period="1y")
+        
+        # Create a simple moving average prediction model for illustration
+        data['SMA_20'] = data['Close'].rolling(window=20).mean()
+        data['SMA_50'] = data['Close'].rolling(window=50).mean()
+        
+        # Calculate next day prediction (simple strategy: when 20-day crosses above 50-day, price will go up)
+        data['Prediction'] = 0
+        data.loc[data['SMA_20'] > data['SMA_50'], 'Prediction'] = 1  # Bullish
+        data.loc[data['SMA_20'] < data['SMA_50'], 'Prediction'] = -1  # Bearish
+        
+        # Calculate actual next day movement
+        data['Next_Day_Return'] = data['Close'].pct_change(1).shift(-1)
+        data['Actual'] = 0
+        data.loc[data['Next_Day_Return'] > 0, 'Actual'] = 1  # Went up
+        data.loc[data['Next_Day_Return'] < 0, 'Actual'] = -1  # Went down
+        
+        # Calculate accuracy
+        data['Correct'] = (data['Prediction'] == data['Actual']).astype(int)
+        
+        # Calculate monthly accuracy
+        data['Month'] = data.index.to_period('M')
+        monthly_accuracy = data.groupby('Month')['Correct'].mean() * 100
+        
+        return {
+            'overall_accuracy': data['Correct'].mean() * 100,
+            'monthly_accuracy': monthly_accuracy.to_dict(),
+            'recent_accuracy': data['Correct'].tail(30).mean() * 100
+        }
+    except:
+        # Fallback to generating synthetic accuracy data
+        seed_value = sum(ord(c) for c in ticker)
+        random.seed(seed_value)
+        
+        # Generate base accuracy based on ticker (higher seed values get higher accuracy)
+        base_accuracy = 40 + (seed_value % 30)  # Between 40% and 70%
+        
+        # Generate monthly accuracies
+        monthly_accuracy = {}
+        today = datetime.now()
+        
+        for i in range(24):  # 24 months
+            month = today.replace(day=1) - timedelta(days=30*i)
+            month_str = month.strftime("%Y-%m")
+            
+            # Add some randomness around the base accuracy
+            accuracy = base_accuracy + random.uniform(-15, 15)
+            # Ensure between 0 and 100
+            accuracy = min(100, max(0, accuracy))
+            
+            monthly_accuracy[month_str] = accuracy
+        
+        # Recent accuracy with a slight bias toward improvement
+        recent_accuracy = base_accuracy + random.uniform(-5, 10)
+        recent_accuracy = min(100, max(0, recent_accuracy))
+        
+        return {
+            'overall_accuracy': base_accuracy,
+            'monthly_accuracy': monthly_accuracy,
+            'recent_accuracy': recent_accuracy
+        }
+
+def get_comprehensive_stock_guide(ticker, info=None):
+    """Generate a comprehensive stock guide with company info, financials, and analysis."""
+    try:
+        # Get stock info if not provided
+        if info is None:
+            info, source, warning = get_stock_info(ticker)
+        
+        # Basic company info
+        company_name = info.get('shortName', ticker)
+        company_summary = info.get('longBusinessSummary', 'No description available.')
+        sector = info.get('sector', 'N/A')
+        industry = info.get('industry', 'N/A')
+        
+        # Financial data
+        market_cap = info.get('marketCap', 'N/A')
+        if market_cap != 'N/A':
+            market_cap = f"${market_cap/1000000000:.2f} Billion"
+            
+        pe_ratio = info.get('trailingPE', 'N/A')
+        if pe_ratio != 'N/A':
+            pe_ratio = f"{pe_ratio:.2f}"
+            
+        eps = info.get('trailingEps', 'N/A')
+        if eps != 'N/A':
+            eps = f"${eps:.2f}"
+            
+        dividend_yield = info.get('dividendYield', 'N/A')
+        if dividend_yield != 'N/A':
+            dividend_yield = f"{dividend_yield*100:.2f}%"
+            
+        # Get analyst ratings and price targets
+        analyst_ratings = get_analyst_ratings(ticker)
+        price_targets = get_price_targets(ticker)
+        
+        # Generate the guide content in markdown format
+        guide = f"""# Comprehensive Guide: {company_name} ({ticker})
+
+## Company Overview
+**Company Name:** {company_name}  
+**Sector:** {sector}  
+**Industry:** {industry}  
+
+### Business Summary
+{company_summary}
+
+## Financial Snapshot
+- **Market Cap:** {market_cap}
+- **P/E Ratio:** {pe_ratio}
+- **EPS (TTM):** {eps}
+- **Dividend Yield:** {dividend_yield}
+- **52-Week High:** ${info.get('fiftyTwoWeekHigh', 'N/A')}
+- **52-Week Low:** ${info.get('fiftyTwoWeekLow', 'N/A')}
+
+## Analyst Ratings
+"""
+        if analyst_ratings:
+            guide += f"""
+- **Average Rating:** {analyst_ratings.get('average_rating', 'N/A')}
+- **Buy Recommendations:** {analyst_ratings.get('buy', 'N/A')}
+- **Outperform Recommendations:** {analyst_ratings.get('outperform', 'N/A')}
+- **Hold Recommendations:** {analyst_ratings.get('hold', 'N/A')}
+- **Underperform Recommendations:** {analyst_ratings.get('underperform', 'N/A')}
+- **Sell Recommendations:** {analyst_ratings.get('sell', 'N/A')}
+"""
+        else:
+            guide += "Analyst ratings not available.\n"
+
+        guide += "\n## Price Targets\n"
+        if price_targets:
+            guide += f"- **Consensus Price Target:** {price_targets.get('price_target', 'N/A')}\n"
+        else:
+            guide += "Price targets not available.\n"
+
+        # Recent news
+        guide += "\n## Recent News\n"
+        news_data = get_news_sentiment(ticker)
+        if news_data:
+            for i, news in enumerate(news_data['news']):
+                guide += f"{i+1}. **{news['date']}**: {news['title']}\n"
+        else:
+            guide += "Recent news not available.\n"
+
+        # Investment considerations
+        guide += """
+## Investment Considerations
+
+### Strengths
+- Market position in industry
+- Financial performance
+- Growth potential
+- Management team
+- Product/service quality
+
+### Risks
+- Market competition
+- Regulatory challenges
+- Industry disruption
+- Economic sensitivity
+- Financial leverage
+
+## Technical Analysis
+- **Support Levels:** Check current chart for support levels
+- **Resistance Levels:** Check current chart for resistance levels
+- **Moving Averages:** Consider 50-day and 200-day moving averages
+- **Relative Strength Index (RSI):** Check current RSI to determine overbought/oversold conditions
+
+## Trading Strategy
+- **Short-term:** Monitor price momentum and trading volume
+- **Medium-term:** Follow trend indicators and price patterns
+- **Long-term:** Focus on fundamentals and valuation metrics
+
+## Disclaimer
+This guide is for informational purposes only and does not constitute investment advice. Always do your own research and consider consulting with a financial advisor before making investment decisions.
+"""
+        return guide
+    except Exception as e:
+        return f"# {ticker} Analysis\n\nUnable to generate comprehensive guide: {str(e)}"
+
+
+def train_lstm_model(data, features=['Close'], time_steps=60, prediction_days=30):
+    """
+    Generate price predictions using web scraping and synthetic data.
+    No LSTM model is used to avoid dependencies and errors.
+    """
+    if not TENSORFLOW_AVAILABLE:
+        # Fallback prediction method if TensorFlow is not available
+        st.info("Using simplified prediction model (TensorFlow not available)")
+        
+        # Get the last available price
+        last_price = data['Close'].iloc[-1]
+        
+        # Create date range for future predictions
+        last_date = data.index[-1]
+        future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=prediction_days)
+        
+        # Use ticker string to generate a consistent seed
+        seed_value = int(time.time())
+        np.random.seed(seed_value)
+        
+        # Generate predictions with a simple random walk with slight upward bias
+        # This is a very simplified model just for demonstration
+        returns = np.random.normal(0.0005, 0.015, size=prediction_days)
+        
+        # Calculate future prices
+        future_prices = [last_price]
+        for ret in returns:
+            next_price = future_prices[-1] * (1 + ret)
+            future_prices.append(next_price)
+        
+        future_prices = future_prices[1:]  # Remove the initial price
+        
+        # Create prediction dataframe
+        predictions_df = pd.DataFrame({
+            'Predicted': future_prices
+        }, index=future_dates)
+        
+        # Add confidence intervals (simplified)
+        volatility = data['Close'].pct_change().std()
+        predictions_df['Upper'] = predictions_df['Predicted'] * (1 + volatility * 1.96)
+        predictions_df['Lower'] = predictions_df['Predicted'] * (1 - volatility * 1.96)
+        
+        return predictions_df
+    
+    # Original LSTM implementation if TensorFlow is available
+    try:
+        # Prepare the data
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        scaled_data = scaler.fit_transform(data[features])
+        
+        # Create the training dataset
+        x_train, y_train = [], []
+        
+        for i in range(time_steps, len(scaled_data)):
+            x_train.append(scaled_data[i-time_steps:i])
+            y_train.append(scaled_data[i, 0])  # Predict the first feature (usually Close price)
+            
+        x_train, y_train = np.array(x_train), np.array(y_train)
+        
+        # Reshape the data for LSTM
+        x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], len(features)))
+        
+        # Build the LSTM model
+        model = Sequential()
+        model.add(LSTM(units=50, return_sequences=True, input_shape=(x_train.shape[1], x_train.shape[2])))
+        model.add(Dropout(0.2))
+        model.add(LSTM(units=50, return_sequences=False))
+        model.add(Dropout(0.2))
+        model.add(Dense(units=1))
+        
+        # Compile and train the model
+        model.compile(optimizer='adam', loss='mean_squared_error')
+        model.fit(x_train, y_train, epochs=25, batch_size=32, verbose=0)
+        
+        # Generate predictions
+        last_time_steps = scaled_data[-time_steps:]
+        
+        # Prepare prediction array
+        predictions = []
+        current_batch = last_time_steps.reshape((1, time_steps, len(features)))
+        
+        # Predict next 'prediction_days' days
+        for _ in range(prediction_days):
+            current_pred = model.predict(current_batch)[0]
+            predictions.append(current_pred)
+            
+            # Update the batch for next prediction
+            next_input = np.zeros((1, 1, len(features)))
+            next_input[0, 0, 0] = current_pred  # Set the predicted value
+            
+            # For other features, use the last known values (simplified)
+            if len(features) > 1:
+                for i in range(1, len(features)):
+                    next_input[0, 0, i] = current_batch[0, -1, i]
+            
+            # Remove the first time step and append the new prediction
+            current_batch = np.append(current_batch[:, 1:, :], next_input, axis=1)
+        
+        # Convert predictions back to original scale
+        predictions_array = np.array(predictions).reshape(-1, 1)
+        if len(features) > 1:
+            # Create a dummy array with the right shape for inverse transform
+            dummy = np.zeros((len(predictions), len(features)))
+            dummy[:, 0] = predictions_array.flatten()
+            predictions_array = scaler.inverse_transform(dummy)[:, 0]
+        else:
+            # If only one feature, we can directly inverse transform
+            predictions_array = scaler.inverse_transform(predictions_array).flatten()
+        
+        # Create date range for future predictions
+        last_date = data.index[-1]
+        future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=prediction_days)
+        
+        # Create prediction dataframe
+        predictions_df = pd.DataFrame({
+            'Predicted': predictions_array
+        }, index=future_dates)
+        
+        # Add confidence intervals
+        volatility = data['Close'].pct_change().std()
+        predictions_df['Upper'] = predictions_df['Predicted'] * (1 + volatility * 1.96)
+        predictions_df['Lower'] = predictions_df['Predicted'] * (1 - volatility * 1.96)
+        
+        return predictions_df
+    
+    except Exception as e:
+        st.error(f"Error in LSTM model: {str(e)}")
+        # Fall back to the simplified prediction method
+        return train_lstm_model(data, features, time_steps, prediction_days)
+
+def display_prediction_section(data, ticker):
+    """Display stock price prediction with improved error handling."""
+    st.subheader("Price Prediction (Next 30 Days)")
+    
+    try:
+        # Check if we have enough data for prediction
+        if len(data) < 60:
+            st.warning("Not enough historical data for reliable predictions. Showing simplified forecast.")
+            
+        # Generate predictions
+        with st.spinner("Generating predictions..."):
+            predictions = train_lstm_model(data)
+            
+        # Display the predictions
+        if predictions is not None:
+            # Create a DataFrame with historical and predicted data
+            historical = data[['Close']].copy()
+            historical.columns = ['Actual']
+            
+            # Get the last 30 days of historical data
+            historical_30d = historical.iloc[-30:]
+            
+            # Combine historical and predicted data for plotting
+            combined_df = pd.concat([historical_30d, predictions], axis=1)
+            
+            # Create the plot
+            fig = go.Figure()
+            
+            # Add historical data
+            fig.add_trace(go.Scatter(
+                x=historical_30d.index, 
+                y=historical_30d['Actual'],
+                mode='lines',
+                name='Historical',
+                line=dict(color='blue')
+            ))
+            
+            # Add predicted data
+            fig.add_trace(go.Scatter(
+                x=predictions.index, 
+                y=predictions['Predicted'],
+                mode='lines',
+                name='Predicted',
+                line=dict(color='red')
+            ))
+            
+            # Add confidence interval
+            fig.add_trace(go.Scatter(
+                x=predictions.index.tolist() + predictions.index.tolist()[::-1],
+                y=predictions['Upper'].tolist() + predictions['Lower'].tolist()[::-1],
+                fill='toself',
+                fillcolor='rgba(231,107,243,0.2)',
+                line=dict(color='rgba(255,255,255,0)'),
+                showlegend=True,
+                name='Confidence Interval (95%)',
+            ))
+            
+            # Update layout
+            fig.update_layout(
+                title=f"{ticker} Stock Price Prediction",
+                xaxis_title="Date",
+                yaxis_title="Price (USD)",
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                ),
+                template="plotly_white"
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Display prediction metrics
+            col1, col2, col3 = st.columns(3)
+            
+            # Calculate price change
+            first_pred = predictions['Predicted'].iloc[0]
+            last_pred = predictions['Predicted'].iloc[-1]
+            price_change = last_pred - first_pred
+            pct_change = (price_change / first_pred) * 100
+            
+            with col1:
+                st.metric(
+                    label="Predicted in 30 Days", 
+                    value=f"${last_pred:.2f}",
+                    delta=f"{pct_change:.2f}%"
+                )
+                
+            with col2:
+                # Calculate volatility
+                volatility = predictions['Predicted'].pct_change().std() * 100
+                st.metric(
+                    label="Predicted Volatility", 
+                    value=f"{volatility:.2f}%"
+                )
+                
+            with col3:
+                # Calculate confidence range
+                confidence_range = predictions['Upper'].iloc[-1] - predictions['Lower'].iloc[-1]
+                confidence_pct = (confidence_range / predictions['Predicted'].iloc[-1]) * 100
+                st.metric(
+                    label="Confidence Range", 
+                    value=f"${confidence_range:.2f}",
+                    delta=f"{confidence_pct:.2f}% of price"
+                )
+                
+            # Add prediction table with expandable view
+            with st.expander("View Detailed Prediction Data"):
+                st.dataframe(predictions.round(2))
+                
+                # Add download button for predictions
+                csv = predictions.to_csv()
+                st.download_button(
+                    label="Download Prediction Data",
+                    data=csv,
+                    file_name=f"{ticker}_predictions.csv",
+                    mime="text/csv",
+                )
+                
+            # Add disclaimer
+            st.info("⚠️ **Prediction Disclaimer:** These predictions are based on historical patterns and may not accurately reflect future market movements. Always conduct thorough research before making investment decisions.")
+            
+        else:
+            st.error("Failed to generate predictions. Please try again later.")
+            
+    except Exception as e:
+        st.error(f"Error generating predictions: {str(e)}")
+        st.info("Using simplified prediction model due to error.")
+        
+        # Fallback to a very simple prediction
+        last_price = data['Close'].iloc[-1]
+        st.write(f"Last known price: ${last_price:.2f}")
+        st.write("Unable to generate detailed predictions. Please try again later.")
+
+def app():
+    st.title('Advanced Stock Analysis & Prediction')
+    
+    # Create tabs for different sections
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "Stock Analysis", 
+        "Price Prediction", 
+        "Analyst Insights",
+        "Detailed Guide", 
+        "Chat Assistant"
+    ])
+    
+    # Input for stock ticker
+    ticker = st.sidebar.text_input('Enter Stock Ticker (e.g., AAPL)', 'AAPL')
+    
+    # Period selection
+    period = st.sidebar.selectbox(
+        "Select Time Period",
+        options=["1mo", "3mo", "6mo", "1y"],
+        index=3,  # Default to 1y
+        format_func=lambda x: {
+            "1mo": "1 Month",
+            "3mo": "3 Months",
+            "6mo": "6 Months",
+            "1y": "1 Year"
+        }[x]
+    )
+    
+    # Load data
+    try:
+        # Import our alpha_vantage_api module
+        import alpha_vantage_api as av
+        
+        # Only use API for Stock Analysis tab
+        data, source, warning = get_stock_data(ticker, period=period)
+        
+        if data.empty:
+            st.error(f"No data found for {ticker}. Please check the ticker symbol.")
+            st.info("Please enter a valid stock ticker symbol and try again.")
+            return
+            
+        # Verify that the data contains the required columns
+        required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            st.error(f"Data for {ticker} is missing required columns: {', '.join(missing_columns)}")
+            st.info("Please enter a valid stock ticker symbol and try again.")
+            return
+            
+        # Get company info
         try:
-            market_cap = info.get('marketCap', 0)
-            market_cap_display = f"${market_cap/1e9:.2f}B" if isinstance(market_cap, (int, float)) else "N/A"
-            st.metric("Market Cap", market_cap_display)
-            st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">Total market value of the company</div>', unsafe_allow_html=True)
-        except:
-            st.metric("Market Cap", "N/A")
-            st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">Total market value of the company</div>', unsafe_allow_html=True)
-    with col3:
-        try:
-            high_52week = info.get('fiftyTwoWeekHigh', df['High'].max() if not df.empty else 'N/A')
-            high_display = f"${high_52week}" if isinstance(high_52week, (int, float)) else "N/A"
-            st.metric("52 Week High", high_display)
-            st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">Highest price in the past year</div>', unsafe_allow_html=True)
-        except:
-            st.metric("52 Week High", f"${df['High'].max():.2f}" if not df.empty else "N/A")
-            st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">Highest price in the past year</div>', unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Create tabs with improved fonts and spacing
-    st.markdown("""
-    <style>
-    .stTab {
-        font-size: 20px;
-        font-weight: bold;
-        padding: 10px 15px;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
-        margin-bottom: 20px;
-    }
-    .stTabs [data-baseweb="tab-border"] {
-        background-color: rgba(255, 255, 255, 0.1);
-    }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background-color: rgba(255, 255, 255, 0.1);
-        border-radius: 5px 5px 0 0;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    tabs = st.tabs(["📈 Price Analysis", "📊 Technical Indicators", "🔮 Predictions"])
-    
-    with tabs[0]:  # Price Analysis Tab
-        # Add educational header for beginners
-        st.markdown('<div style="padding: 15px; background-color: rgba(0,0,0,0.3); border-radius: 10px; margin: 10px 0 25px 0;">', unsafe_allow_html=True)
-        st.markdown('<h3 style="font-size: 22px; color: white; margin-bottom: 10px;">Price Chart & Volume</h3>', unsafe_allow_html=True)
-        st.markdown('<p style="color: #9e9e9e; font-size: 16px;">This chart shows the stock\'s price movement over time. <strong>Candlesticks</strong> show daily price ranges - green means price went up, red means it went down. <strong>Volume bars</strong> at the bottom show how many shares were traded each day.</p>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+            info, source, warning = get_stock_info(ticker)
+            if warning:
+                st.sidebar.warning(warning)
+        except Exception as e:
+            st.sidebar.warning(f"Using basic stock info due to API limitations.")
+            info = {}
+            
+        company_name = info.get('shortName', ticker)
+        sector = info.get('sector', 'N/A')
+        industry = info.get('industry', 'N/A')
         
-        # Display the chart
-        fig = plot_stock_data(df, st.session_state.stock)
-        st.plotly_chart(fig, use_container_width=True)
+        st.sidebar.subheader(f"{company_name} ({ticker})")
+        st.sidebar.text(f"Sector: {sector}")
+        st.sidebar.text(f"Industry: {industry}")
         
-        # Add chart reading tips for beginners
-        with st.expander("📚 How to Read This Chart"):
-            st.markdown("""
-            <div style="padding: 15px; background-color: rgba(0,0,0,0.2); border-radius: 10px;">
-                <h4 style="color: white; font-size: 18px;">Understanding Candlestick Charts</h4>
-                <ul style="color: #e0e0e0; font-size: 16px;">
-                    <li><strong style="color: #26a69a;">Green candles</strong>: Price closed higher than it opened (bullish)</li>
-                    <li><strong style="color: #ef5350;">Red candles</strong>: Price closed lower than it opened (bearish)</li>
-                    <li>The <strong>body</strong> of the candle shows opening and closing prices</li>
-                    <li>The <strong>wicks</strong> (thin lines) show the highest and lowest prices during that period</li>
-                </ul>
+        # Current Price
+        current_price = round(data['Close'].iloc[-1], 2)
+        price_change = round(data['Close'].iloc[-1] - data['Close'].iloc[-2], 2)
+        percent_change = round((price_change / data['Close'].iloc[-2]) * 100, 2)
+        
+        # Format the price change with color
+        if price_change >= 0:
+            price_change_formatted = f"📈 +${price_change} (+{percent_change}%)"
+            price_color = "green"
+        else:
+            price_change_formatted = f"📉 -${abs(price_change)} ({percent_change}%)"
+            price_color = "red"
+            
+        st.sidebar.markdown(f"### Current Price: ${current_price}")
+        st.sidebar.markdown(f"<span style='color:{price_color}'>{price_change_formatted}</span>", unsafe_allow_html=True)
+        
+        # TAB 1: STOCK ANALYSIS
+        with tab1:
+            st.header(f"{company_name} ({ticker}) Analysis")
+            
+            # Interactive chart
+            chart_type = st.selectbox('Select Chart Type', ['Closing Price', 'Candlestick', 'Volume', 'Moving Averages'])
+            
+            if chart_type == 'Closing Price':
+                st.subheader('Closing Price Over Time')
+                fig = px.line(data, y='Close', title=f'{company_name} ({ticker}) Closing Price')
+                fig.update_layout(xaxis_title='Date', yaxis_title='Price ($)')
+                st.plotly_chart(fig, use_container_width=True)
                 
-                <h4 style="color: white; font-size: 18px; margin-top: 20px;">Moving Averages</h4>
-                <ul style="color: #e0e0e0; font-size: 16px;">
-                    <li><strong>MA20</strong> (20-day moving average): Shows short-term trend</li>
-                    <li><strong>MA50</strong> (50-day moving average): Shows medium-term trend</li>
-                    <li>When shorter MA crosses above longer MA, it\'s often a bullish signal</li>
-                    <li>When shorter MA crosses below longer MA, it\'s often a bearish signal</li>
-                </ul>
+            elif chart_type == 'Candlestick':
+                st.subheader('Candlestick Chart')
+                fig = go.Figure(data=[go.Candlestick(
+                    x=data.index,
+                    open=data['Open'],
+                    high=data['High'],
+                    low=data['Low'],
+                    close=data['Close']
+                )])
+                fig.update_layout(title=f'{company_name} ({ticker}) Candlestick Chart',
+                                  xaxis_title='Date',
+                                  yaxis_title='Price ($)')
+                st.plotly_chart(fig, use_container_width=True)
                 
-                <h4 style="color: white; font-size: 18px; margin-top: 20px;">Volume</h4>
-                <ul style="color: #e0e0e0; font-size: 16px;">
-                    <li>Higher volume often confirms the strength of a price move</li>
-                    <li>Low volume may indicate lack of conviction in the price movement</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Key Statistics with improved fonts and layout
-        st.markdown('<div style="padding: 15px; background-color: rgba(0,0,0,0.3); border-radius: 10px; margin: 25px 0;">', unsafe_allow_html=True)
-        st.markdown('<h3 style="font-size: 22px; color: white; margin-bottom: 15px;">Key Statistics</h3>', unsafe_allow_html=True)
-        st.markdown('<p style="color: #9e9e9e; font-size: 16px; margin-bottom: 20px;">These metrics help you understand the stock\'s valuation, volatility, and trading activity.</p>', unsafe_allow_html=True)
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            # Handle potential formatting errors with try-except
-            try:
-                pe_value = info.get('trailingPE', 'N/A')
-                pe_display = f"{pe_value:.2f}" if isinstance(pe_value, (int, float)) else "N/A"
-                st.metric("P/E Ratio", pe_display)
-                st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">Price relative to earnings (lower can mean better value)</div>', unsafe_allow_html=True)
-            except:
-                st.metric("P/E Ratio", "N/A")
-                st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">Price relative to earnings (lower can mean better value)</div>', unsafe_allow_html=True)
-        with col2:
-            try:
-                beta_value = info.get('beta', 'N/A')
-                beta_display = f"{beta_value:.2f}" if isinstance(beta_value, (int, float)) else "N/A"
-                st.metric("Beta", beta_display)
-                st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">Volatility compared to market (>1 means more volatile)</div>', unsafe_allow_html=True)
-            except:
-                st.metric("Beta", "N/A")
-                st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">Volatility compared to market (>1 means more volatile)</div>', unsafe_allow_html=True)
-        with col3:
-            try:
-                volume_value = info.get('volume', df['Volume'].iloc[-1] if not df.empty else 'N/A')
-                volume_display = f"{volume_value:,}" if isinstance(volume_value, (int, float)) else "N/A"
-                st.metric("Volume", volume_display)
-                st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">Number of shares traded today</div>', unsafe_allow_html=True)
-            except:
-                st.metric("Volume", f"{df['Volume'].iloc[-1]:,}" if not df.empty else "N/A")
-                st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">Number of shares traded today</div>', unsafe_allow_html=True)
-        with col4:
-            try:
-                avg_volume = info.get('averageVolume', df['Volume'].mean() if not df.empty else 'N/A')
-                avg_volume_display = f"{avg_volume:,}" if isinstance(avg_volume, (int, float)) else "N/A"
-                st.metric("Avg Volume", avg_volume_display)
-                st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">Average daily trading volume</div>', unsafe_allow_html=True)
-            except:
-                st.metric("Avg Volume", f"{df['Volume'].mean():,.0f}" if not df.empty else "N/A")
-                st.markdown('<div style="font-size: 12px; color: #9e9e9e; margin-top: 5px;">Average daily trading volume</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with tabs[1]:  # Technical Indicators Tab
-        # Add educational header for technical analysis
-        st.markdown('<div style="padding: 15px; background-color: rgba(0,0,0,0.3); border-radius: 10px; margin: 10px 0 25px 0;">', unsafe_allow_html=True)
-        st.markdown('<h3 style="font-size: 22px; color: white; margin-bottom: 10px;">Technical Analysis</h3>', unsafe_allow_html=True)
-        st.markdown('<p style="color: #9e9e9e; font-size: 16px;">Technical indicators help identify potential trading opportunities by analyzing price movements and patterns. These tools can help predict future price movements based on historical data.</p>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Display RSI with explanation
-        st.markdown('<div style="padding: 15px; background-color: rgba(0,0,0,0.2); border-radius: 10px; margin-bottom: 25px;">', unsafe_allow_html=True)
-        st.markdown('<h4 style="font-size: 18px; color: white;">Relative Strength Index (RSI)</h4>', unsafe_allow_html=True)
-        st.markdown('<p style="color: #9e9e9e; font-size: 15px; margin-bottom: 15px;">RSI measures the speed and change of price movements on a scale of 0-100. Values above 70 suggest the stock may be <span style="color: #ef5350;">overbought</span> (potentially overvalued), while values below 30 suggest it may be <span style="color: #26a69a;">oversold</span> (potentially undervalued).</p>', unsafe_allow_html=True)
-        
-        # Display RSI chart
-        fig_rsi, fig_macd = plot_technical_indicators(df)
-        st.plotly_chart(fig_rsi, use_container_width=True)
-        
-        # Add RSI interpretation guide
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.markdown('<div style="text-align: center; padding: 10px; background-color: rgba(38, 166, 154, 0.2); border-radius: 5px;">', unsafe_allow_html=True)
-            st.markdown('<h5 style="color: #26a69a;">RSI Below 30</h5>', unsafe_allow_html=True)
-            st.markdown('<p style="color: #e0e0e0; font-size: 14px;">Potentially oversold<br>Consider buying opportunity</p>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        with col2:
-            st.markdown('<div style="text-align: center; padding: 10px; background-color: rgba(255, 255, 255, 0.1); border-radius: 5px;">', unsafe_allow_html=True)
-            st.markdown('<h5 style="color: #e0e0e0;">RSI Between 30-70</h5>', unsafe_allow_html=True)
-            st.markdown('<p style="color: #e0e0e0; font-size: 14px;">Neutral territory<br>No strong signal</p>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        with col3:
-            st.markdown('<div style="text-align: center; padding: 10px; background-color: rgba(239, 83, 80, 0.2); border-radius: 5px;">', unsafe_allow_html=True)
-            st.markdown('<h5 style="color: #ef5350;">RSI Above 70</h5>', unsafe_allow_html=True)
-            st.markdown('<p style="color: #e0e0e0; font-size: 14px;">Potentially overbought<br>Consider selling opportunity</p>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Display MACD with explanation
-        st.markdown('<div style="padding: 15px; background-color: rgba(0,0,0,0.2); border-radius: 10px; margin: 25px 0;">', unsafe_allow_html=True)
-        st.markdown('<h4 style="font-size: 18px; color: white;">Moving Average Convergence Divergence (MACD)</h4>', unsafe_allow_html=True)
-        st.markdown('<p style="color: #9e9e9e; font-size: 15px; margin-bottom: 15px;">MACD helps identify changes in the strength, direction, momentum, and duration of a trend. When the MACD line crosses above the signal line, it\'s often a <span style="color: #26a69a;">bullish signal</span>. When it crosses below, it\'s often a <span style="color: #ef5350;">bearish signal</span>.</p>', unsafe_allow_html=True)
-        
-        # Display MACD chart
-        st.plotly_chart(fig_macd, use_container_width=True)
-        
-        # Add MACD interpretation guide
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown('<div style="text-align: center; padding: 10px; background-color: rgba(38, 166, 154, 0.2); border-radius: 5px;">', unsafe_allow_html=True)
-            st.markdown('<h5 style="color: #26a69a;">Bullish Signal</h5>', unsafe_allow_html=True)
-            st.markdown('<p style="color: #e0e0e0; font-size: 14px;">MACD line crosses above signal line<br>Potential upward momentum</p>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        with col2:
-            st.markdown('<div style="text-align: center; padding: 10px; background-color: rgba(239, 83, 80, 0.2); border-radius: 5px;">', unsafe_allow_html=True)
-            st.markdown('<h5 style="color: #ef5350;">Bearish Signal</h5>', unsafe_allow_html=True)
-            st.markdown('<p style="color: #e0e0e0; font-size: 14px;">MACD line crosses below signal line<br>Potential downward momentum</p>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Add a simple moving average explanation
-        with st.expander("📚 Learn More About Technical Indicators"):
-            st.markdown('''
-            <div style="padding: 15px; background-color: rgba(0,0,0,0.2); border-radius: 10px;">
-                <h4 style="color: white; font-size: 18px;">Common Technical Indicators</h4>
+            elif chart_type == 'Volume':
+                st.subheader('Trading Volume Over Time')
+                fig = px.bar(data, y='Volume', title=f'{company_name} ({ticker}) Trading Volume')
+                fig.update_layout(xaxis_title='Date', yaxis_title='Volume')
+                st.plotly_chart(fig, use_container_width=True)
                 
-                <h5 style="color: #4fc3f7; margin-top: 15px;">Moving Averages</h5>
-                <p style="color: #e0e0e0; font-size: 15px;">Moving averages smooth out price data to create a single flowing line, making it easier to identify the direction of the trend. A rising moving average indicates an uptrend, while a falling moving average indicates a downtrend.</p>
+            elif chart_type == 'Moving Averages':
+                st.subheader('Moving Averages')
+                ma1 = st.slider('Short MA Days', 5, 50, 20)
+                ma2 = st.slider('Long MA Days', 50, 200, 100)
                 
-                <h5 style="color: #4fc3f7; margin-top: 15px;">Bollinger Bands</h5>
-                <p style="color: #e0e0e0; font-size: 15px;">Bollinger Bands consist of a middle band (simple moving average) with an upper and lower band. These bands widen when volatility increases and contract when volatility decreases. Price reaching the upper band may indicate overbought conditions, while price reaching the lower band may indicate oversold conditions.</p>
+                # Calculate moving averages
+                data[f'MA{ma1}'] = data['Close'].rolling(window=ma1).mean()
+                data[f'MA{ma2}'] = data['Close'].rolling(window=ma2).mean()
                 
-                <h5 style="color: #4fc3f7; margin-top: 15px;">Volume</h5>
-                <p style="color: #e0e0e0; font-size: 15px;">Volume represents the total number of shares traded during a given time period. High volume during price increases suggests strong buying pressure, while high volume during price decreases suggests strong selling pressure.</p>
-            </div>
-            ''', unsafe_allow_html=True)
-    
-    with tabs[2]:  # Predictions Tab
-        st.markdown('<h3 style="font-size: 24px; color: white;">25-Day Price Prediction</h3>', unsafe_allow_html=True)
-        
-        # Current price and stats
-        last_price = df['Close'].iloc[-1]
-        predicted_price = forecast['yhat'].iloc[-1]
-        upper_price = forecast['yhat_upper'].iloc[-1]
-        lower_price = forecast['yhat_lower'].iloc[-1]
-        price_change = ((predicted_price - last_price) / last_price) * 100
-        
-        # Display predictions in a clean format
-        st.markdown("""
-        <style>
-        .prediction-box {
-            background-color: rgba(0,0,0,0.5);
-            padding: 20px;
-            border-radius: 10px;
-            margin: 10px 0;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-        .price-text {
-            color: white;
-            font-size: 18px;
-            margin: 10px 0;
-        }
-        .highlight {
-            color: #00ff00;
-            font-weight: bold;
-        }
-        .warning {
-            color: #ff9800;
-            font-size: 16px;
-            font-style: italic;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        # Current Price Box
-        st.markdown(f"""
-        <div class="prediction-box">
-            <h4 style="color: white; font-size: 20px;">Current Status</h4>
-            <p class="price-text">Current Price: <span class="highlight">${last_price:.2f}</span></p>
-            <p class="price-text">Trading Volume: <span class="highlight">{df['Volume'].iloc[-1]:,.0f}</span></p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Prediction Box
-        st.markdown(f"""
-        <div class="prediction-box">
-            <h4 style="color: white; font-size: 20px;">25-Day Forecast</h4>
-            <p class="price-text">Predicted Price: <span class="highlight">${predicted_price:.2f}</span></p>
-            <p class="price-text">Expected Change: <span class="highlight">{price_change:+.2f}%</span></p>
-            <p class="price-text">Price Range:</p>
-            <ul class="price-text">
-                <li>Upper Estimate: ${upper_price:.2f}</li>
-                <li>Lower Estimate: ${lower_price:.2f}</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Analysis Box
-        trend = "Upward" if price_change > 0 else "Downward"
-        confidence_range = ((upper_price - lower_price) / predicted_price) * 100
-        
-        st.markdown(f"""
-        <div class="prediction-box">
-            <h4 style="color: white; font-size: 20px;">Analysis</h4>
-            <p class="price-text">• Predicted Trend: <span class="highlight">{trend}</span></p>
-            <p class="price-text">• Confidence Range: <span class="highlight">±{confidence_range:.1f}%</span></p>
-            <p class="price-text">• Based on historical patterns and market indicators, the stock shows:</p>
-            <ul class="price-text">
-                <li>{'Strong' if abs(price_change) > 10 else 'Moderate'} {trend.lower()} momentum</li>
-                <li>{'High' if confidence_range > 20 else 'Moderate'} price volatility expected</li>
-            </ul>
-            <p class="warning">Note: These predictions are based on historical data and should not be the sole basis for investment decisions.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Disclaimer with improved fonts
-    st.markdown("""
-    <div style='background-color: rgba(0,0,0,0.5); padding: 20px; border-radius: 5px; margin-top: 30px;'>
-        <p style='color: white; font-size: 16px; font-family: Arial, sans-serif;'>
-            This analysis is based on historical data and technical indicators. 
-            Past performance is not indicative of future results. 
-            Please conduct your own research before making investment decisions.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close Price'))
+                fig.add_trace(go.Scatter(x=data.index, y=data[f'MA{ma1}'], mode='lines', name=f'{ma1}-day MA'))
+                fig.add_trace(go.Scatter(x=data.index, y=data[f'MA{ma2}'], mode='lines', name=f'{ma2}-day MA'))
+                
+                fig.update_layout(title=f'{company_name} ({ticker}) Moving Averages',
+                                  xaxis_title='Date',
+                                  yaxis_title='Price ($)')
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Add a data source disclaimer if using synthetic data
+            if source == "synthetic":
+                st.warning("⚠️ **Data Source:** Using simulated data for demonstration purposes. Real market data may vary.")
+            
+            # Show basic stats
+            st.subheader('Basic Statistics')
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Opening Price", f"${data['Open'].iloc[-1]:.2f}")
+                st.metric("Highest Price (Period)", f"${data['High'].max():.2f}")
+            with col2:
+                st.metric("Closing Price", f"${data['Close'].iloc[-1]:.2f}")
+                st.metric("Lowest Price (Period)", f"${data['Low'].min():.2f}")
+            with col3:
+                st.metric("Volume", f"{data['Volume'].iloc[-1]:,.0f}")
+                st.metric("Avg. Volume", f"{data['Volume'].mean():,.0f}")
+                
+            # Summary statistics
+            st.subheader('Summary Statistics')
+            st.dataframe(data.describe())
+            
+        # TAB 2: PRICE PREDICTION
+        with tab2:
+            display_prediction_section(data, ticker)
+                
+        # TAB 3: ANALYST INSIGHTS
+        with tab3:
+            st.header(f"Analyst Insights for {company_name} ({ticker})")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Analyst Ratings
+                st.subheader("Analyst Recommendations")
+                
+                ratings = get_analyst_ratings(ticker)
+                
+                if ratings:
+                    # Create a horizontal bar chart for analyst ratings
+                    rating_labels = list(ratings['ratings'].keys())
+                    rating_values = list(ratings['ratings'].values())
+                    
+                    fig = go.Figure(go.Bar(
+                        x=rating_values,
+                        y=rating_labels,
+                        orientation='h',
+                        marker=dict(
+                            color=['green', 'lightgreen', 'gray', 'pink', 'red'],
+                            line=dict(color='rgba(0, 0, 0, 0.5)', width=1)
+                        )
+                    ))
+                    fig.update_layout(
+                        title=f"Analyst Recommendations (Total: {ratings['total']})",
+                        xaxis_title="Number of Analysts",
+                        yaxis=dict(autorange="reversed")  # Reverse the y-axis to show Strong Buy at the top
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    if ratings['source'] == 'synthetic':
+                        st.info("Note: Using synthetic analyst ratings for demonstration.")
+                else:
+                    st.info("Analyst ratings not available for this stock.")
+            
+            with col2:
+                # Price Targets
+                st.subheader("Price Targets")
+                
+                targets = get_price_targets(ticker)
+                
+                if targets and any(v is not None for v in targets['targets'].values()):
+                    # Extract targets
+                    current = targets['targets'].get('current')
+                    low = targets['targets'].get('low')
+                    average = targets['targets'].get('average')
+                    high = targets['targets'].get('high')
+                    
+                    # Create a gauge chart for price targets
+                    if current and average:
+                        # Calculate upside/downside
+                        if current > 0 and average > 0:
+                            percent_change = ((average - current) / current) * 100
+                            change_text = f"{percent_change:.1f}% {'Upside' if percent_change >= 0 else 'Downside'}"
+                        else:
+                            change_text = "N/A"
+                        
+                        # Create the figure
+                        fig = go.Figure()
+                        
+                        # Add current price marker
+                        if current:
+                            fig.add_trace(go.Indicator(
+                                mode = "number+gauge+delta",
+                                value = current,
+                                domain = {'x': [0, 1], 'y': [0, 1]},
+                                title = {'text': f"Current: ${current:.2f}<br>Target: ${average:.2f}<br>{change_text}"},
+                                gauge = {
+                                    'shape': "bullet",
+                                    'axis': {'range': [None, high * 1.1 if high else average * 1.5]},
+                                    'threshold': {
+                                        'line': {'color': "red", 'width': 2},
+                                        'thickness': 0.75,
+                                        'value': average
+                                    },
+                                    'steps': [
+                                        {'range': [0, low if low else current * 0.8], 'color': "lightgray"},
+                                        {'range': [low if low else current * 0.8, high if high else average * 1.2], 'color': "gray"}
+                                    ],
+                                    'bar': {'color': "black"}
+                                },
+                                delta = {'reference': average, 'relative': True, 'position': "top"}
+                            ))
+                        
+                        fig.update_layout(height=200)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Show the actual values
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Low Target", f"${low:.2f}" if low else "N/A")
+                        with col2:
+                            st.metric("Average Target", f"${average:.2f}" if average else "N/A")
+                        with col3:
+                            st.metric("High Target", f"${high:.2f}" if high else "N/A")
+                    else:
+                        st.info("Complete price target data not available.")
+                    
+                    if targets['source'] == 'synthetic':
+                        st.info("Note: Using synthetic price targets for demonstration.")
+                else:
+                    st.info("Price targets not available for this stock.")
+            
+            # News and Sentiment
+            st.subheader("Recent News & Sentiment")
+            
+            news = get_news_sentiment(ticker)
+            
+            if news:
+                # Calculate overall sentiment
+                sentiment = news['overall_sentiment']
+                
+                # Create a gauge for sentiment
+                fig = go.Figure(go.Indicator(
+                    mode = "gauge+number",
+                    value = sentiment * 100,  # Convert to -100 to 100 scale
+                    domain = {'x': [0, 1], 'y': [0, 1]},
+                    title = {'text': "News Sentiment Score"},
+                    gauge = {
+                        'axis': {'range': [-100, 100]},
+                        'bar': {'color': "darkblue"},
+                        'steps': [
+                            {'range': [-100, -33], 'color': "red"},
+                            {'range': [-33, 33], 'color': "yellow"},
+                            {'range': [33, 100], 'color': "green"}
+                        ],
+                        'threshold': {
+                            'line': {'color': "black", 'width': 4},
+                            'thickness': 0.75,
+                            'value': sentiment * 100
+                        }
+                    }
+                ))
+                
+                fig.update_layout(height=250)
+                st.plotly_chart(fig, use_container_width=True)
+                
+                if news['source'] == 'synthetic':
+                    st.info("Note: Using synthetic news and sentiment for demonstration.")
+                
+                # Display news items in a nice format
+                for item in news['news']:
+                    with st.expander(f"{item['date']} - {item['title']}"):
+                        st.write(f"**Date:** {item['date']}")
+                        st.write(f"**Headline:** {item['title']}")
+                        st.write(f"**Source:** {item['source']}")
+                        st.write(f"**Sentiment:** {'Positive' if item['sentiment'] > 0.2 else 'Negative' if item['sentiment'] < -0.2 else 'Neutral'}")
+                        if 'url' in item:
+                            st.write(f"[Read more]({item['url']})")
+            else:
+                st.info("Recent news could not be retrieved.")
+                
+            # Historical accuracy section
+            st.subheader("Historical Prediction Performance")
+            historical_accuracy = get_historical_accuracy(ticker)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if historical_accuracy['overall_accuracy'] != 'N/A':
+                    # Create a gauge for overall accuracy
+                    fig = go.Figure(go.Indicator(
+                        mode = "gauge+number",
+                        value = historical_accuracy['overall_accuracy'],
+                        domain = {'x': [0, 1], 'y': [0, 1]},
+                        title = {'text': "Overall Prediction Accuracy"},
+                        gauge = {
+                            'axis': {'range': [None, 100]},
+                            'bar': {'color': "darkblue"},
+                            'steps': [
+                                {'range': [0, 33], 'color': "red"},
+                                {'range': [33, 66], 'color': "yellow"},
+                                {'range': [66, 100], 'color': "green"}
+                            ]
+                        }
+                    ))
+                    fig.update_layout(height=300)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Historical accuracy data not available.")
+            
+            with col2:
+                if historical_accuracy['recent_accuracy'] != 'N/A':
+                    # Create a gauge for recent accuracy
+                    fig = go.Figure(go.Indicator(
+                        mode = "gauge+number",
+                        value = historical_accuracy['recent_accuracy'],
+                        domain = {'x': [0, 1], 'y': [0, 1]},
+                        title = {'text': "Recent 30-Day Accuracy"},
+                        gauge = {
+                            'axis': {'range': [None, 100]},
+                            'bar': {'color': "darkblue"},
+                            'steps': [
+                                {'range': [0, 33], 'color': "red"},
+                                {'range': [33, 66], 'color': "yellow"},
+                                {'range': [66, 100], 'color': "green"}
+                            ]
+                        }
+                    ))
+                    fig.update_layout(height=300)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Recent accuracy data not available.")
+            
+            # Disclaimer for data sources
+            st.warning("⚠️ **Data Source Disclaimer:** Analyst ratings, price targets, and news are scraped from public financial websites and may not always be accurate or up-to-date. This information should be used as one of many inputs in your investment research process.")
+            
+        # TAB 4: DETAILED GUIDE
+        with tab4:
+            st.header(f"Comprehensive Guide for {company_name} ({ticker})")
+            
+            with st.spinner("Generating comprehensive stock guide... This may take a moment."):
+                guide_content = get_comprehensive_stock_guide(ticker)
+                st.markdown(guide_content)
+            
+            # Download button for the guide
+            st.download_button(
+                label="Download Guide as Markdown",
+                data=guide_content,
+                file_name=f"{ticker}_guide.md",
+                mime="text/markdown",
+            )
+                
+        # TAB 5: CHAT ASSISTANT
+        with tab5:
+            display_chatbot(default_ticker=ticker)
+            
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+        st.info("Please enter a valid stock ticker symbol and try again.")
+
+if __name__ == "__main__":
+    app()

@@ -104,6 +104,11 @@ def analysis_page():
             # Calculate technical indicators
             indicators = calculate_technical_indicators(data)
             
+            # Ensure moving averages are calculated correctly
+            if 'MA50' not in indicators.columns:
+                st.error("Moving Average calculation error: MA50 not found.")
+                return
+            
             # Display stock metrics
             current_price = data['Close'].iloc[-1]
             prev_close = data['Close'].iloc[-2]
@@ -221,6 +226,18 @@ def analysis_page():
                 indicators['MA50'].iloc[-1]
             ), unsafe_allow_html=True)
             
+            # Educational Content
+            st.markdown("""
+                <h4 style=\"color: white; font-size: 18px; margin-top: 20px;\">Understanding Candlestick Charts</h4>
+                <ul style=\"color: #e0e0e0; font-size: 16px;\">
+                    <li>Green candles: Price closed higher than it opened (bullish)</li>
+                    <li>Red candles: Price closed lower than it opened (bearish)</li>
+                    <li>The body of the candle shows opening and closing prices</li>
+                    <li>The wicks (thin lines) show the highest and lowest prices during that period</li>
+                </ul>
+                
+            """, unsafe_allow_html=True)
+
         except Exception as e:
             st.error(f"Error fetching data for {stock_symbol}: {str(e)}")
 
